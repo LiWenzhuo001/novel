@@ -203,6 +203,8 @@ Document Loaders → 章节感知 RecursiveCharacterTextSplitter
 相关配置：`ENABLE_LLM_CHAPTER_DETECTION`、`CHAPTER_DETECTION_MODEL`、`CHAPTER_DETECTION_TIMEOUT`、`CHAPTER_DETECTION_CANDIDATE_LIMIT` 和 `CHAPTER_DETECTION_CONFIDENCE_THRESHOLD`。
 ## RAG 质量评测与重新索引
 
+> 评测数据集与金标准（`evals/`）属本地评测工具链，不随仓库分发；以下命令需在含评测数据的本地环境执行。
+
 ```bash
 cd backend
 python scripts/preload_models.py

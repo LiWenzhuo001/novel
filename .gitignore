@@ -82,7 +82,9 @@ frontend/vite.config.ts.timestamp-*
 # 生成的交付物与截图（可能包含本地信息，不提交）
 outputs/
 
-# 评测产物暂缓入库：等西游记 v2 人工判定完成后，删除本段再统一提交
-evals/reports/
-evals/pooling/
+# 评测与教程文档（非项目本体：评测数据/金标为本地工具链，教程为交付物，均不入库）
+evals/
+TUTORIAL.md
+PROJECT.md
+tutorial.html
 

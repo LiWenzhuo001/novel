@@ -1,8 +1,0 @@
-{
-  "source_dataset": "E:\\novel\\evals\\datasets\\hongloumeng_recall.jsonl",
-  "subset": 20,
-  "stratified_from": 40,
-  "validation_weak": 0,
-  "model": "deepseek-v4-flash",
-  "generated_at": "2026-08-28T13:38:14.819583+00:00"
-}
