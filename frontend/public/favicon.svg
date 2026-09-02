@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title>小说智读</title>
+  <desc>一本打开的书，书页中央有一颗星光</desc>
+  <defs>
+    <linearGradient id="cover" x1="8" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#193b58"/>
+      <stop offset="1" stop-color="#0b253d"/>
+    </linearGradient>
+    <linearGradient id="page" x1="15" y1="19" x2="49" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fffdf5"/>
+      <stop offset="1" stop-color="#e8dfc9"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#f4efe3"/>
+  <path d="M9 18.5C16 14 23.5 15.8 32 21v31c-8.5-5.2-16-7-23-2.5v-31Z" fill="url(#cover)"/>
+  <path d="M55 18.5C48 14 40.5 15.8 32 21v31c8.5-5.2 16-7 23-2.5v-31Z" fill="url(#cover)"/>
+  <path d="M13 21.5c5.4-2.6 11.2-1.3 16 1.6v24.4c-5.2-2.4-10.5-3-16-1.1V21.5Z" fill="url(#page)"/>
+  <path d="M51 21.5c-5.4-2.6-11.2-1.3-16 1.6v24.4c5.2-2.4 10.5-3-16-1.1V21.5Z" fill="url(#page)"/>
+  <path d="M32 21v31" stroke="#b6a98d" stroke-width="1.5"/>
+  <path d="m42 10 1.8 5.2L49 17l-5.2 1.8L42 24l-1.8-5.2L35 17l5.2-1.8L42 10Z" fill="#e6b85c"/>
+  <circle cx="51.5" cy="11.5" r="1.5" fill="#e6b85c"/>
+  <path d="M18 29h9M18 34h9M37 29h9M37 34h9" stroke="#b6a98d" stroke-width="1.5" stroke-linecap="round" opacity=".85"/>
+</svg>

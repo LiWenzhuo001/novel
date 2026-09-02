@@ -1,0 +1,2031 @@
+{
+  "version": "v2-query-prep-1",
+  "dataset": "E:\\novel\\evals\\datasets\\xiyouji_v2_topics.jsonl",
+  "file_id": "c959fb4c1a30",
+  "generated_at": "2026-08-28T20:27:53",
+  "prompt_version": "rag-query-v2",
+  "questions": 100,
+  "applied": 99,
+  "avg_latency_ms": 1850.25,
+  "reasons": {
+    "rewritten": 100
+  },
+  "cases": [
+    {
+      "id": "xyj2-001",
+      "query": "孙悟空最初是怎样诞生的？",
+      "original": "孙悟空最初是怎样诞生的？",
+      "standalone_query": "孙悟空最初是怎样诞生的？",
+      "retrieval_query": "孙悟空 诞生 来历 原文",
+      "intent": "factual",
+      "entities": [
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "诞生方式",
+        "出生地点",
+        "相关章节"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 3340.55
+    },
+    {
+      "id": "xyj2-002",
+      "query": "石猴凭什么被群猴拥立为王？",
+      "original": "石猴凭什么被群猴拥立为王？",
+      "standalone_query": "石猴凭什么被群猴拥立为王？",
+      "retrieval_query": "石猴被群猴拥立为王的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "石猴",
+        "群猴"
+      ],
+      "evidence_focus": [
+        "石猴发现水帘洞",
+        "群猴拥立石猴为王"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1799.27
+    },
+    {
+      "id": "xyj2-003",
+      "query": "孙悟空拜谁为师？学到了哪两项主要本领？",
+      "original": "孙悟空拜谁为师？学到了哪两项主要本领？",
+      "standalone_query": "孙悟空拜谁为师？学到了哪两项主要本领？",
+      "retrieval_query": "孙悟空 师父 主要本领",
+      "intent": "character",
+      "entities": [
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "师父",
+        "主要本领"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1335.73
+    },
+    {
+      "id": "xyj2-004",
+      "query": "菩提祖师为什么把孙悟空赶下山？",
+      "original": "菩提祖师为什么把孙悟空赶下山？",
+      "standalone_query": "菩提祖师为什么把孙悟空赶下山？",
+      "retrieval_query": "菩提祖师 赶走 孙悟空 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "菩提祖师",
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "赶走原因",
+        "情节因果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1297.07
+    },
+    {
+      "id": "xyj2-005",
+      "query": "孙悟空的如意金箍棒原本是什么东西？",
+      "original": "孙悟空的如意金箍棒原本是什么东西？",
+      "standalone_query": "孙悟空的如意金箍棒原本是什么东西？",
+      "retrieval_query": "如意金箍棒的来历 原本是什么",
+      "intent": "factual",
+      "entities": [
+        "孙悟空",
+        "如意金箍棒"
+      ],
+      "evidence_focus": [
+        "金箍棒来历",
+        "原本形态"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1510.2
+    },
+    {
+      "id": "xyj2-006",
+      "query": "孙悟空为什么被勾到地府？他在地府做了什么？",
+      "original": "孙悟空为什么被勾到地府？他在地府做了什么？",
+      "standalone_query": "孙悟空为什么被勾到地府？他在地府做了什么？",
+      "retrieval_query": "孙悟空被勾到地府的原因及在地府的行为",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "地府"
+      ],
+      "evidence_focus": [
+        "勾魂原因",
+        "地府行为"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1488.3
+    },
+    {
+      "id": "xyj2-007",
+      "query": "天庭第一次招安孙悟空，给了他什么官职？他为什么反出天庭？",
+      "original": "天庭第一次招安孙悟空，给了他什么官职？他为什么反出天庭？",
+      "standalone_query": "天庭第一次招安孙悟空，给了他什么官职？他为什么反出天庭？",
+      "retrieval_query": "天庭第一次招安孙悟空 官职 弼马温 反出天庭 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "天庭"
+      ],
+      "evidence_focus": [
+        "官职",
+        "弼马温",
+        "反出天庭原因"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1853.86
+    },
+    {
+      "id": "xyj2-008",
+      "query": "孙悟空为什么搅乱蟠桃会？",
+      "original": "孙悟空为什么搅乱蟠桃会？",
+      "standalone_query": "孙悟空为什么搅乱蟠桃会？",
+      "retrieval_query": "孙悟空搅乱蟠桃会的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "蟠桃会"
+      ],
+      "evidence_focus": [
+        "蟠桃会",
+        "孙悟空",
+        "原因"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2035.43
+    },
+    {
+      "id": "xyj2-009",
+      "query": "孙悟空大闹天宫最后是被谁制服的？用的是什么办法？",
+      "original": "孙悟空大闹天宫最后是被谁制服的？用的是什么办法？",
+      "standalone_query": "孙悟空大闹天宫最后是被谁制服的？用的是什么办法？",
+      "retrieval_query": "孙悟空大闹天宫 被谁制服 用什么办法",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "大闹天宫"
+      ],
+      "evidence_focus": [
+        "制服者",
+        "方法"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1992.26
+    },
+    {
+      "id": "xyj2-010",
+      "query": "孙悟空大闹天宫、被压五行山，发生在第几回？",
+      "original": "孙悟空大闹天宫、被压五行山，发生在第几回？",
+      "standalone_query": "孙悟空大闹天宫、被压五行山，发生在第几回？",
+      "retrieval_query": "孙悟空大闹天宫 被压五行山 回目",
+      "intent": "chapter_locator",
+      "entities": [
+        "孙悟空",
+        "大闹天宫",
+        "五行山"
+      ],
+      "evidence_focus": [
+        "章节定位",
+        "情节因果"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1582.91
+    },
+    {
+      "id": "xyj2-011",
+      "query": "观音菩萨是奉谁之命去东土寻访取经人的？",
+      "original": "观音菩萨是奉谁之命去东土寻访取经人的？",
+      "standalone_query": "观音菩萨是奉谁之命去东土寻访取经人的？",
+      "retrieval_query": "观音菩萨奉谁之命去东土寻访取经人",
+      "intent": "factual",
+      "entities": [
+        "观音菩萨",
+        "东土",
+        "取经人"
+      ],
+      "evidence_focus": [
+        "观音菩萨",
+        "东土寻访取经人",
+        "命令来源"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2003.28
+    },
+    {
+      "id": "xyj2-012",
+      "query": "唐太宗为什么要派人去西天取经？",
+      "original": "唐太宗为什么要派人去西天取经？",
+      "standalone_query": "唐太宗为什么要派人去西天取经？",
+      "retrieval_query": "唐太宗 派人 西天取经 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "唐太宗",
+        "西天取经"
+      ],
+      "evidence_focus": [
+        "唐太宗",
+        "取经原因"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1707.28
+    },
+    {
+      "id": "xyj2-013",
+      "query": "唐僧的出身与身世是什么样的？",
+      "original": "唐僧的出身与身世是什么样的？",
+      "standalone_query": "唐僧的出身与身世是什么样的？",
+      "retrieval_query": "唐僧的出身与身世",
+      "intent": "character",
+      "entities": [
+        "唐僧"
+      ],
+      "evidence_focus": [
+        "出身",
+        "身世"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1343.68
+    },
+    {
+      "id": "xyj2-014",
+      "query": "孙悟空是怎样从五行山下被放出来的？",
+      "original": "孙悟空是怎样从五行山下被放出来的？",
+      "standalone_query": "孙悟空是怎样从五行山下被放出来的？",
+      "retrieval_query": "孙悟空 五行山 被放出 经过",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "五行山"
+      ],
+      "evidence_focus": [
+        "五行山",
+        "放出",
+        "经过"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1793.89
+    },
+    {
+      "id": "xyj2-015",
+      "query": "唐僧用什么办法管束不听话的孙悟空？",
+      "original": "唐僧用什么办法管束不听话的孙悟空？",
+      "standalone_query": "唐僧用什么办法管束不听话的孙悟空？",
+      "retrieval_query": "唐僧 管束 孙悟空 方法",
+      "intent": "character_relation",
+      "entities": [
+        "唐僧",
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "管束方法",
+        "师徒互动"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1512.07
+    },
+    {
+      "id": "xyj2-016",
+      "query": "白龙马原本是什么身份？为什么变成唐僧的坐骑？",
+      "original": "白龙马原本是什么身份？为什么变成唐僧的坐骑？",
+      "standalone_query": "白龙马原本是什么身份？为什么变成唐僧的坐骑？",
+      "retrieval_query": "白龙马原本身份 变成唐僧坐骑的原因",
+      "intent": "character_relation",
+      "entities": [
+        "白龙马",
+        "唐僧"
+      ],
+      "evidence_focus": [
+        "白龙马身份",
+        "变成坐骑原因"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1627.57
+    },
+    {
+      "id": "xyj2-017",
+      "query": "猪八戒原在天庭担任什么职务？因何被贬下凡？",
+      "original": "猪八戒原在天庭担任什么职务？因何被贬下凡？",
+      "standalone_query": "猪八戒原在天庭担任什么职务？因何被贬下凡？",
+      "retrieval_query": "猪八戒 天庭 职务 被贬下凡 原因",
+      "intent": "character",
+      "entities": [
+        "猪八戒"
+      ],
+      "evidence_focus": [
+        "猪八戒天庭职务",
+        "猪八戒被贬原因"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1792.53
+    },
+    {
+      "id": "xyj2-018",
+      "query": "猪八戒是在什么地方被收服的？",
+      "original": "猪八戒是在什么地方被收服的？",
+      "standalone_query": "猪八戒是在什么地方被收服的？",
+      "retrieval_query": "猪八戒被收服的地点",
+      "intent": "factual",
+      "entities": [
+        "猪八戒"
+      ],
+      "evidence_focus": [
+        "地点",
+        "收服"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1675.78
+    },
+    {
+      "id": "xyj2-019",
+      "query": "沙僧在流沙河为妖时受谁点化等候取经人？他脖子上挂的是什么？",
+      "original": "沙僧在流沙河为妖时受谁点化等候取经人？他脖子上挂的是什么？",
+      "standalone_query": "沙僧在流沙河为妖时受谁点化等候取经人？他脖子上挂的是什么？",
+      "retrieval_query": "沙僧 流沙河 点化 等候取经人 脖子上挂的",
+      "intent": "factual",
+      "entities": [
+        "沙僧",
+        "流沙河"
+      ],
+      "evidence_focus": [
+        "点化者",
+        "脖子上挂的物品"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1635.14
+    },
+    {
+      "id": "xyj2-020",
+      "query": "观音禅院的僧人为什么起意谋害唐僧师徒？",
+      "original": "观音禅院的僧人为什么起意谋害唐僧师徒？",
+      "standalone_query": "观音禅院的僧人为什么起意谋害唐僧师徒？",
+      "retrieval_query": "观音禅院 僧人 谋害 唐僧 师徒 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "观音禅院",
+        "僧人",
+        "唐僧",
+        "师徒"
+      ],
+      "evidence_focus": [
+        "观音禅院",
+        "僧人",
+        "谋害动机"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1780.55
+    },
+    {
+      "id": "xyj2-021",
+      "query": "黄风岭黄风怪的本相是什么？他的风有何厉害？",
+      "original": "黄风岭黄风怪的本相是什么？他的风有何厉害？",
+      "standalone_query": "黄风岭黄风怪的本相是什么？他的风有何厉害？",
+      "retrieval_query": "黄风岭黄风怪的本相 黄风怪的风 厉害之处",
+      "intent": "character",
+      "entities": [
+        "黄风怪",
+        "黄风岭"
+      ],
+      "evidence_focus": [
+        "黄风怪本相",
+        "黄风怪的风",
+        "黄风怪能力"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1666.84
+    },
+    {
+      "id": "xyj2-022",
+      "query": "黄风怪最后是被谁用什么收服的？",
+      "original": "黄风怪最后是被谁用什么收服的？",
+      "standalone_query": "黄风怪最后是被谁用什么收服的？",
+      "retrieval_query": "黄风怪 收服 谁 用什么",
+      "intent": "plot_causality",
+      "entities": [
+        "黄风怪"
+      ],
+      "evidence_focus": [
+        "收服者",
+        "收服方式"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1711.36
+    },
+    {
+      "id": "xyj2-023",
+      "query": "五庄观的人参果有什么奇异之处？",
+      "original": "五庄观的人参果有什么奇异之处？",
+      "standalone_query": "五庄观的人参果有什么奇异之处？",
+      "retrieval_query": "五庄观人参果 奇异之处",
+      "intent": "factual",
+      "entities": [
+        "五庄观",
+        "人参果"
+      ],
+      "evidence_focus": [
+        "人参果的奇异特性"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1537.06
+    },
+    {
+      "id": "xyj2-024",
+      "query": "孙悟空为什么推倒人参果树？",
+      "original": "孙悟空为什么推倒人参果树？",
+      "standalone_query": "孙悟空为什么推倒人参果树？",
+      "retrieval_query": "孙悟空推倒人参果树的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "人参果树"
+      ],
+      "evidence_focus": [
+        "推倒原因",
+        "情节因果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1444.36
+    },
+    {
+      "id": "xyj2-025",
+      "query": "人参果树最后是被谁用什么办法救活的？",
+      "original": "人参果树最后是被谁用什么办法救活的？",
+      "standalone_query": "人参果树最后是被谁用什么办法救活的？",
+      "retrieval_query": "人参果树 救活 办法 谁",
+      "intent": "plot_causality",
+      "entities": [
+        "人参果树"
+      ],
+      "evidence_focus": [
+        "救活方法",
+        "施救者"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1627.26
+    },
+    {
+      "id": "xyj2-026",
+      "query": "白骨精先后变化成哪几个人物来骗唐僧？",
+      "original": "白骨精先后变化成哪几个人物来骗唐僧？",
+      "standalone_query": "白骨精先后变化成哪几个人物来骗唐僧？",
+      "retrieval_query": "白骨精 变化 骗唐僧 人物",
+      "intent": "character",
+      "entities": [
+        "白骨精",
+        "唐僧"
+      ],
+      "evidence_focus": [
+        "白骨精变化的人物",
+        "骗唐僧的情节"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1489.37
+    },
+    {
+      "id": "xyj2-027",
+      "query": "唐僧为什么要赶走孙悟空？",
+      "original": "唐僧为什么要赶走孙悟空？",
+      "standalone_query": "唐僧为什么要赶走孙悟空？",
+      "retrieval_query": "唐僧赶走孙悟空的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "唐僧",
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "三打白骨精",
+        "师徒矛盾",
+        "紧箍咒"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1384.7
+    },
+    {
+      "id": "xyj2-028",
+      "query": "猪八戒用什么办法把孙悟空请回？",
+      "original": "猪八戒用什么办法把孙悟空请回？",
+      "standalone_query": "猪八戒用什么办法把孙悟空请回？",
+      "retrieval_query": "猪八戒请孙悟空回来的方法",
+      "intent": "plot_causality",
+      "entities": [
+        "猪八戒",
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "猪八戒请孙悟空回来的方法",
+        "情节因果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1370.01
+    },
+    {
+      "id": "xyj2-029",
+      "query": "碗子山波月洞黄袍怪的真身是什么？",
+      "original": "碗子山波月洞黄袍怪的真身是什么？",
+      "standalone_query": "碗子山波月洞黄袍怪的真身是什么？",
+      "retrieval_query": "碗子山波月洞黄袍怪的真身",
+      "intent": "character",
+      "entities": [
+        "黄袍怪",
+        "碗子山",
+        "波月洞"
+      ],
+      "evidence_focus": [
+        "黄袍怪真身",
+        "身份揭示"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1855.63
+    },
+    {
+      "id": "xyj2-030",
+      "query": "黄袍怪与宝象国三公主百花羞是什么关系？",
+      "original": "黄袍怪与宝象国三公主百花羞是什么关系？",
+      "standalone_query": "黄袍怪与宝象国三公主百花羞是什么关系？",
+      "retrieval_query": "黄袍怪 宝象国 三公主 百花羞 关系",
+      "intent": "character_relation",
+      "entities": [
+        "黄袍怪",
+        "百花羞"
+      ],
+      "evidence_focus": [
+        "人物关系",
+        "情节背景"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1578.83
+    },
+    {
+      "id": "xyj2-031",
+      "query": "平顶山莲花洞的两个魔头叫什么名字？",
+      "original": "平顶山莲花洞的两个魔头叫什么名字？",
+      "standalone_query": "平顶山莲花洞的两个魔头叫什么名字？",
+      "retrieval_query": "平顶山莲花洞的两个魔头名字",
+      "intent": "factual",
+      "entities": [
+        "平顶山",
+        "莲花洞",
+        "魔头"
+      ],
+      "evidence_focus": [
+        "莲花洞魔头名字"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1279.03
+    },
+    {
+      "id": "xyj2-032",
+      "query": "金角银角大王有哪些厉害的法宝？",
+      "original": "金角银角大王有哪些厉害的法宝？",
+      "standalone_query": "金角银角大王有哪些厉害的法宝？",
+      "retrieval_query": "金角银角大王 法宝",
+      "intent": "factual",
+      "entities": [
+        "银角大王"
+      ],
+      "evidence_focus": [
+        "法宝名称",
+        "法宝能力"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1692.86
+    },
+    {
+      "id": "xyj2-033",
+      "query": "孙悟空是怎样骗取妖怪法宝的？",
+      "original": "孙悟空是怎样骗取妖怪法宝的？",
+      "standalone_query": "孙悟空是怎样骗取妖怪法宝的？",
+      "retrieval_query": "孙悟空骗取妖怪法宝",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "妖怪法宝"
+      ],
+      "evidence_focus": [
+        "骗取法宝的具体手段",
+        "相关章节"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1696.2
+    },
+    {
+      "id": "xyj2-034",
+      "query": "乌鸡国国王遭了什么变故？",
+      "original": "乌鸡国国王遭了什么变故？",
+      "standalone_query": "乌鸡国国王遭了什么变故？",
+      "retrieval_query": "乌鸡国国王 变故 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "乌鸡国国王"
+      ],
+      "evidence_focus": [
+        "乌鸡国国王",
+        "变故"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1694.25
+    },
+    {
+      "id": "xyj2-035",
+      "query": "文殊菩萨的坐骑为什么要害乌鸡国国王？",
+      "original": "文殊菩萨的坐骑为什么要害乌鸡国国王？",
+      "standalone_query": "文殊菩萨的坐骑为什么要害乌鸡国国王？",
+      "retrieval_query": "文殊菩萨坐骑 乌鸡国国王 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "文殊菩萨",
+        "坐骑",
+        "乌鸡国国王"
+      ],
+      "evidence_focus": [
+        "乌鸡国",
+        "文殊菩萨坐骑",
+        "因果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1498.12
+    },
+    {
+      "id": "xyj2-036",
+      "query": "红孩儿的父母是谁？他住在哪里？",
+      "original": "红孩儿的父母是谁？他住在哪里？",
+      "standalone_query": "红孩儿的父母是谁？他住在哪里？",
+      "retrieval_query": "红孩儿 父母 住处",
+      "intent": "character_relation",
+      "entities": [
+        "红孩儿"
+      ],
+      "evidence_focus": [
+        "红孩儿的父母",
+        "红孩儿的住处"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1530.22
+    },
+    {
+      "id": "xyj2-037",
+      "query": "红孩儿的三昧真火为什么让孙悟空吃了大亏？",
+      "original": "红孩儿的三昧真火为什么让孙悟空吃了大亏？",
+      "standalone_query": "红孩儿的三昧真火为什么让孙悟空吃了大亏？",
+      "retrieval_query": "红孩儿 三昧真火 孙悟空 吃亏 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "红孩儿",
+        "三昧真火",
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "三昧真火",
+        "孙悟空",
+        "红孩儿"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1402.16
+    },
+    {
+      "id": "xyj2-038",
+      "query": "观音菩萨用什么办法收服红孩儿？",
+      "original": "观音菩萨用什么办法收服红孩儿？",
+      "standalone_query": "观音菩萨用什么办法收服红孩儿？",
+      "retrieval_query": "观音菩萨收服红孩儿的方法",
+      "intent": "plot_causality",
+      "entities": [
+        "观音菩萨",
+        "红孩儿"
+      ],
+      "evidence_focus": [
+        "收服方法",
+        "情节因果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1489.51
+    },
+    {
+      "id": "xyj2-039",
+      "query": "黑水河的妖怪是什么来历？",
+      "original": "黑水河的妖怪是什么来历？",
+      "standalone_query": "黑水河的妖怪是什么来历？",
+      "retrieval_query": "黑水河的妖怪来历",
+      "intent": "character",
+      "entities": [
+        "黑水河",
+        "妖怪"
+      ],
+      "evidence_focus": [
+        "来历",
+        "身份",
+        "背景"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1570.24
+    },
+    {
+      "id": "xyj2-040",
+      "query": "唐僧在取经途中第二次赶走孙悟空是因为什么事？发生在前两次之间还是之后？",
+      "original": "唐僧在取经途中第二次赶走孙悟空是因为什么事？发生在前两次之间还是之后？",
+      "standalone_query": "唐僧在取经途中第二次赶走孙悟空是因为什么事？发生在前两次之间还是之后？",
+      "retrieval_query": "唐僧第二次赶走孙悟空的原因及时间点",
+      "intent": "plot_causality",
+      "entities": [
+        "唐僧",
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "第二次赶走孙悟空的原因",
+        "事件发生的时间点"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1793.92
+    },
+    {
+      "id": "xyj2-041",
+      "query": "车迟国的三位国师分别是什么妖怪成精？",
+      "original": "车迟国的三位国师分别是什么妖怪成精？",
+      "standalone_query": "车迟国的三位国师分别是什么妖怪成精？",
+      "retrieval_query": "车迟国三位国师 妖怪 原型",
+      "intent": "character",
+      "entities": [
+        "车迟国",
+        "三位国师"
+      ],
+      "evidence_focus": [
+        "车迟国三位国师的妖怪原型"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1986.48
+    },
+    {
+      "id": "xyj2-042",
+      "query": "孙悟空与车迟国三位国师比试了哪些项目？按先后顺序是什么？",
+      "original": "孙悟空与车迟国三位国师比试了哪些项目？按先后顺序是什么？",
+      "standalone_query": "孙悟空与车迟国三位国师比试了哪些项目？按先后顺序是什么？",
+      "retrieval_query": "孙悟空 车迟国 三位国师 比试 项目 顺序",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "车迟国",
+        "三位国师"
+      ],
+      "evidence_focus": [
+        "比试项目",
+        "先后顺序"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1672.18
+    },
+    {
+      "id": "xyj2-043",
+      "query": "车迟国国王为什么要灭僧兴道？",
+      "original": "车迟国国王为什么要灭僧兴道？",
+      "standalone_query": "车迟国国王为什么要灭僧兴道？",
+      "retrieval_query": "车迟国国王灭僧兴道的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "车迟国国王"
+      ],
+      "evidence_focus": [
+        "灭僧兴道的原因",
+        "车迟国国王的动机"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1562.2
+    },
+    {
+      "id": "xyj2-044",
+      "query": "通天河灵感大王是什么来历？",
+      "original": "通天河灵感大王是什么来历？",
+      "standalone_query": "通天河灵感大王是什么来历？",
+      "retrieval_query": "通天河灵感大王 来历 身份 背景",
+      "intent": "character",
+      "entities": [
+        "通天河灵感大王"
+      ],
+      "evidence_focus": [
+        "来历",
+        "身份",
+        "背景"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1998.7
+    },
+    {
+      "id": "xyj2-045",
+      "query": "灵感大王为什么要吃童男童女？",
+      "original": "灵感大王为什么要吃童男童女？",
+      "standalone_query": "灵感大王为什么要吃童男童女？",
+      "retrieval_query": "灵感大王吃童男童女的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "灵感大王",
+        "童男童女"
+      ],
+      "evidence_focus": [
+        "灵感大王吃童男童女的原因"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1666.45
+    },
+    {
+      "id": "xyj2-046",
+      "query": "观音菩萨用什么收服了灵感大王？",
+      "original": "观音菩萨用什么收服了灵感大王？",
+      "standalone_query": "观音菩萨用什么收服了灵感大王？",
+      "retrieval_query": "观音菩萨收服灵感大王的方法",
+      "intent": "plot_causality",
+      "entities": [
+        "观音菩萨",
+        "灵感大王"
+      ],
+      "evidence_focus": [
+        "收服方法",
+        "法宝或手段"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1676.8
+    },
+    {
+      "id": "xyj2-047",
+      "query": "老鼋驮唐僧师徒过通天河时托付了什么事？",
+      "original": "老鼋驮唐僧师徒过通天河时托付了什么事？",
+      "standalone_query": "老鼋驮唐僧师徒过通天河时托付了什么事？",
+      "retrieval_query": "老鼋 通天河 托付 唐僧 师徒",
+      "intent": "plot_causality",
+      "entities": [
+        "老鼋",
+        "唐僧",
+        "通天河"
+      ],
+      "evidence_focus": [
+        "老鼋托付事项",
+        "通天河情节"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1804.08
+    },
+    {
+      "id": "xyj2-048",
+      "query": "金兜山独角兕大王用什么宝贝收走了孙悟空的金箍棒？",
+      "original": "金兜山独角兕大王用什么宝贝收走了孙悟空的金箍棒？",
+      "standalone_query": "金兜山独角兕大王用什么宝贝收走了孙悟空的金箍棒？",
+      "retrieval_query": "金兜山 独角兕大王 宝贝 收走 金箍棒",
+      "intent": "factual",
+      "entities": [
+        "金兜山",
+        "独角兕大王",
+        "孙悟空",
+        "金箍棒"
+      ],
+      "evidence_focus": [
+        "宝贝名称",
+        "收走金箍棒的情节"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1660.64
+    },
+    {
+      "id": "xyj2-049",
+      "query": "独角兕大王的真身是谁的坐骑？",
+      "original": "独角兕大王的真身是谁的坐骑？",
+      "standalone_query": "独角兕大王的真身是谁的坐骑？",
+      "retrieval_query": "独角兕大王 真身 坐骑 主人",
+      "intent": "character_relation",
+      "entities": [
+        "独角兕大王"
+      ],
+      "evidence_focus": [
+        "独角兕大王真身",
+        "坐骑主人"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1934.04
+    },
+    {
+      "id": "xyj2-050",
+      "query": "太上老君用什么收服了独角兕大王？",
+      "original": "太上老君用什么收服了独角兕大王？",
+      "standalone_query": "太上老君用什么收服了独角兕大王？",
+      "retrieval_query": "太上老君 收服 独角兕大王 法宝",
+      "intent": "factual",
+      "entities": [
+        "太上老君",
+        "独角兕大王"
+      ],
+      "evidence_focus": [
+        "收服法宝",
+        "独角兕大王"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2252.81
+    },
+    {
+      "id": "xyj2-051",
+      "query": "唐僧与八戒误饮子母河的水后发生了什么？",
+      "original": "唐僧与八戒误饮子母河的水后发生了什么？",
+      "standalone_query": "唐僧与八戒误饮子母河的水后发生了什么？",
+      "retrieval_query": "唐僧与八戒误饮子母河的水后的情节",
+      "intent": "plot_causality",
+      "entities": [
+        "唐僧",
+        "八戒",
+        "子母河"
+      ],
+      "evidence_focus": [
+        "误饮子母河水后的情节",
+        "怀孕",
+        "解阳山",
+        "落胎泉"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2351.36
+    },
+    {
+      "id": "xyj2-052",
+      "query": "西梁女国的国王对唐僧是什么心思？",
+      "original": "西梁女国的国王对唐僧是什么心思？",
+      "standalone_query": "西梁女国的国王对唐僧是什么心思？",
+      "retrieval_query": "西梁女国国王对唐僧的心思",
+      "intent": "character_relation",
+      "entities": [
+        "唐僧"
+      ],
+      "evidence_focus": [
+        "国王对唐僧的情感",
+        "国王的意图"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2190.93
+    },
+    {
+      "id": "xyj2-053",
+      "query": "毒敌山琵琶洞的蝎子精用什么伤了孙悟空？",
+      "original": "毒敌山琵琶洞的蝎子精用什么伤了孙悟空？",
+      "standalone_query": "毒敌山琵琶洞的蝎子精用什么伤了孙悟空？",
+      "retrieval_query": "毒敌山琵琶洞 蝎子精 伤 孙悟空 武器",
+      "intent": "factual",
+      "entities": [
+        "毒敌山琵琶洞",
+        "蝎子精",
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "蝎子精的武器",
+        "伤害方式"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2002.58
+    },
+    {
+      "id": "xyj2-054",
+      "query": "昴日星官为什么能降伏蝎子精？",
+      "original": "昴日星官为什么能降伏蝎子精？",
+      "standalone_query": "昴日星官为什么能降伏蝎子精？",
+      "retrieval_query": "昴日星官 降伏 蝎子精 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "昴日星官",
+        "蝎子精"
+      ],
+      "evidence_focus": [
+        "昴日星官",
+        "蝎子精",
+        "降伏原因"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2019.27
+    },
+    {
+      "id": "xyj2-055",
+      "query": "六耳猕猴与真悟空有哪些难以分辨之处？",
+      "original": "六耳猕猴与真悟空有哪些难以分辨之处？",
+      "standalone_query": "六耳猕猴与真悟空有哪些难以分辨之处？",
+      "retrieval_query": "六耳猕猴与真悟空难以分辨之处",
+      "intent": "character_relation",
+      "entities": [
+        "六耳猕猴"
+      ],
+      "evidence_focus": [
+        "外貌",
+        "本领",
+        "武器",
+        "行为"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1943.15
+    },
+    {
+      "id": "xyj2-056",
+      "query": "真假美猴王最后是被谁分辨出来的？",
+      "original": "真假美猴王最后是被谁分辨出来的？",
+      "standalone_query": "真假美猴王最后是被谁分辨出来的？",
+      "retrieval_query": "真假美猴王 分辨 如来",
+      "intent": "plot_causality",
+      "entities": [
+        "真假美猴王"
+      ],
+      "evidence_focus": [
+        "分辨者身份",
+        "情节结局"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2256.64
+    },
+    {
+      "id": "xyj2-057",
+      "query": "火焰山是怎么来的？",
+      "original": "火焰山是怎么来的？",
+      "standalone_query": "火焰山是怎么来的？",
+      "retrieval_query": "火焰山的来历 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "火焰山"
+      ],
+      "evidence_focus": [
+        "火焰山",
+        "来历"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1955.33
+    },
+    {
+      "id": "xyj2-058",
+      "query": "铁扇公主为什么不肯借芭蕉扇给孙悟空？",
+      "original": "铁扇公主为什么不肯借芭蕉扇给孙悟空？",
+      "standalone_query": "铁扇公主为什么不肯借芭蕉扇给孙悟空？",
+      "retrieval_query": "铁扇公主不肯借芭蕉扇给孙悟空的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "铁扇公主",
+        "孙悟空",
+        "芭蕉扇"
+      ],
+      "evidence_focus": [
+        "铁扇公主与孙悟空之间的恩怨",
+        "红孩儿事件",
+        "借扇冲突的起因"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2328.43
+    },
+    {
+      "id": "xyj2-059",
+      "query": "孙悟空三调芭蕉扇，三次分别用了什么办法？",
+      "original": "孙悟空三调芭蕉扇，三次分别用了什么办法？",
+      "standalone_query": "孙悟空三调芭蕉扇，三次分别用了什么办法？",
+      "retrieval_query": "孙悟空三调芭蕉扇 三次 办法",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "芭蕉扇"
+      ],
+      "evidence_focus": [
+        "三调芭蕉扇的具体方法",
+        "情节顺序"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2112.53
+    },
+    {
+      "id": "xyj2-060",
+      "query": "牛魔王与孙悟空原本是什么关系？后来为何反目？",
+      "original": "牛魔王与孙悟空原本是什么关系？后来为何反目？",
+      "standalone_query": "牛魔王与孙悟空原本是什么关系？后来为何反目？",
+      "retrieval_query": "牛魔王 孙悟空 关系 反目 原因",
+      "intent": "character_relation",
+      "entities": [
+        "牛魔王",
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "人物关系",
+        "反目原因"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2230.0
+    },
+    {
+      "id": "xyj2-061",
+      "query": "祭赛国金光寺的佛宝舍利是被谁偷走的？",
+      "original": "祭赛国金光寺的佛宝舍利是被谁偷走的？",
+      "standalone_query": "祭赛国金光寺的佛宝舍利是被谁偷走的？",
+      "retrieval_query": "祭赛国金光寺佛宝舍利被谁偷走",
+      "intent": "factual",
+      "entities": [
+        "祭赛国",
+        "金光寺",
+        "佛宝舍利"
+      ],
+      "evidence_focus": [
+        "佛宝舍利失窃事件",
+        "偷窃者身份"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2148.03
+    },
+    {
+      "id": "xyj2-062",
+      "query": "九头虫是什么来历？最后结局如何？",
+      "original": "九头虫是什么来历？最后结局如何？",
+      "standalone_query": "九头虫是什么来历？最后结局如何？",
+      "retrieval_query": "九头虫来历 结局",
+      "intent": "character",
+      "entities": [
+        "九头虫"
+      ],
+      "evidence_focus": [
+        "来历",
+        "结局"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1880.17
+    },
+    {
+      "id": "xyj2-063",
+      "query": "二郎神为什么恰好出现在碧波潭助战？",
+      "original": "二郎神为什么恰好出现在碧波潭助战？",
+      "standalone_query": "二郎神为什么恰好出现在碧波潭助战？",
+      "retrieval_query": "二郎神 碧波潭 助战 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "二郎神",
+        "碧波潭"
+      ],
+      "evidence_focus": [
+        "二郎神出现的原因",
+        "碧波潭助战的情节"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2136.54
+    },
+    {
+      "id": "xyj2-064",
+      "query": "小西天黄眉大王的宝贝是什么？为何能困住孙悟空？",
+      "original": "小西天黄眉大王的宝贝是什么？为何能困住孙悟空？",
+      "standalone_query": "小西天黄眉大王的宝贝是什么？为何能困住孙悟空？",
+      "retrieval_query": "小西天黄眉大王 宝贝 困住孙悟空 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "黄眉大王",
+        "孙悟空",
+        "小西天"
+      ],
+      "evidence_focus": [
+        "宝贝名称",
+        "困住孙悟空的机制"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1718.95
+    },
+    {
+      "id": "xyj2-065",
+      "query": "弥勒佛用什么办法收服黄眉大王？",
+      "original": "弥勒佛用什么办法收服黄眉大王？",
+      "standalone_query": "弥勒佛用什么办法收服黄眉大王？",
+      "retrieval_query": "弥勒佛 收服 黄眉大王 办法",
+      "intent": "plot_causality",
+      "entities": [
+        "弥勒佛",
+        "黄眉大王"
+      ],
+      "evidence_focus": [
+        "收服方法",
+        "情节因果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2027.77
+    },
+    {
+      "id": "xyj2-066",
+      "query": "盘丝洞的七个女妖是什么妖怪？",
+      "original": "盘丝洞的七个女妖是什么妖怪？",
+      "standalone_query": "盘丝洞的七个女妖是什么妖怪？",
+      "retrieval_query": "盘丝洞七个女妖 妖怪 种类",
+      "intent": "character",
+      "entities": [
+        "盘丝洞",
+        "七个女妖"
+      ],
+      "evidence_focus": [
+        "妖怪种类",
+        "身份"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2049.96
+    },
+    {
+      "id": "xyj2-067",
+      "query": "黄花观多目怪的厉害之处是什么？",
+      "original": "黄花观多目怪的厉害之处是什么？",
+      "standalone_query": "黄花观多目怪的厉害之处是什么？",
+      "retrieval_query": "黄花观 多目怪 能力 厉害之处",
+      "intent": "character",
+      "entities": [
+        "黄花观",
+        "多目怪"
+      ],
+      "evidence_focus": [
+        "多目怪的能力",
+        "多目怪的厉害之处"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2667.21
+    },
+    {
+      "id": "xyj2-068",
+      "query": "毗蓝婆菩萨用什么收服了多目怪？",
+      "original": "毗蓝婆菩萨用什么收服了多目怪？",
+      "standalone_query": "毗蓝婆菩萨用什么收服了多目怪？",
+      "retrieval_query": "毗蓝婆菩萨 收服 多目怪 方法",
+      "intent": "factual",
+      "entities": [
+        "毗蓝婆菩萨",
+        "多目怪"
+      ],
+      "evidence_focus": [
+        "收服方法",
+        "法宝或手段"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1933.06
+    },
+    {
+      "id": "xyj2-069",
+      "query": "朱紫国国王得了什么病？病因是什么？",
+      "original": "朱紫国国王得了什么病？病因是什么？",
+      "standalone_query": "朱紫国国王得了什么病？病因是什么？",
+      "retrieval_query": "朱紫国国王 病 病因",
+      "intent": "plot_causality",
+      "entities": [
+        "朱紫国国王"
+      ],
+      "evidence_focus": [
+        "病情",
+        "病因"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2204.2
+    },
+    {
+      "id": "xyj2-070",
+      "query": "赛太岁的真身是什么？他有哪三件宝贝？",
+      "original": "赛太岁的真身是什么？他有哪三件宝贝？",
+      "standalone_query": "赛太岁的真身是什么？他有哪三件宝贝？",
+      "retrieval_query": "赛太岁 真身 三件宝贝",
+      "intent": "character",
+      "entities": [
+        "赛太岁"
+      ],
+      "evidence_focus": [
+        "赛太岁真身",
+        "三件宝贝"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2377.94
+    },
+    {
+      "id": "xyj2-071",
+      "query": "狮驼岭的三个魔头分别是什么妖怪？",
+      "original": "狮驼岭的三个魔头分别是什么妖怪？",
+      "standalone_query": "狮驼岭的三个魔头分别是什么妖怪？",
+      "retrieval_query": "狮驼岭三个魔头分别是什么妖怪",
+      "intent": "character",
+      "entities": [
+        "狮驼岭",
+        "三个魔头"
+      ],
+      "evidence_focus": [
+        "狮驼岭三魔的妖怪身份"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2157.67
+    },
+    {
+      "id": "xyj2-072",
+      "query": "孙悟空在狮驼岭被大鹏雕怎样擒住？",
+      "original": "孙悟空在狮驼岭被大鹏雕怎样擒住？",
+      "standalone_query": "孙悟空在狮驼岭被大鹏雕怎样擒住？",
+      "retrieval_query": "孙悟空 狮驼岭 大鹏雕 擒住 情节",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "狮驼岭",
+        "大鹏雕"
+      ],
+      "evidence_focus": [
+        "擒拿过程",
+        "情节因果"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1964.73
+    },
+    {
+      "id": "xyj2-073",
+      "query": "大鹏雕为什么连如来佛祖都要亲自出面收服？",
+      "original": "大鹏雕为什么连如来佛祖都要亲自出面收服？",
+      "standalone_query": "大鹏雕为什么连如来佛祖都要亲自出面收服？",
+      "retrieval_query": "大鹏雕 如来佛祖 亲自收服 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "大鹏雕",
+        "如来佛祖"
+      ],
+      "evidence_focus": [
+        "大鹏雕的背景",
+        "如来佛祖收服大鹏雕的原因"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1922.16
+    },
+    {
+      "id": "xyj2-074",
+      "query": "比丘国国王为什么要用小儿心肝做药引？",
+      "original": "比丘国国王为什么要用小儿心肝做药引？",
+      "standalone_query": "比丘国国王为什么要用小儿心肝做药引？",
+      "retrieval_query": "比丘国国王 小儿心肝 药引 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "比丘国国王",
+        "小儿心肝",
+        "药引"
+      ],
+      "evidence_focus": [
+        "比丘国国王用药引的原因",
+        "相关情节描述"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1976.93
+    },
+    {
+      "id": "xyj2-075",
+      "query": "南极寿星收的是什么妖怪？它在天上是什么身份？",
+      "original": "南极寿星收的是什么妖怪？它在天上是什么身份？",
+      "standalone_query": "南极寿星收的是什么妖怪？它在天上是什么身份？",
+      "retrieval_query": "南极寿星 收 妖怪 天上 身份",
+      "intent": "character",
+      "entities": [
+        "南极寿星"
+      ],
+      "evidence_focus": [
+        "妖怪身份",
+        "天上身份",
+        "收妖情节"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2090.06
+    },
+    {
+      "id": "xyj2-076",
+      "query": "无底洞的金鼻白毛老鼠精与托塔李天王是什么关系？",
+      "original": "无底洞的金鼻白毛老鼠精与托塔李天王是什么关系？",
+      "standalone_query": "无底洞的金鼻白毛老鼠精与托塔李天王是什么关系？",
+      "retrieval_query": "金鼻白毛老鼠精 托塔李天王 关系",
+      "intent": "character_relation",
+      "entities": [
+        "金鼻白毛老鼠精",
+        "托塔李天王"
+      ],
+      "evidence_focus": [
+        "人物关系",
+        "身份背景"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1854.87
+    },
+    {
+      "id": "xyj2-077",
+      "query": "老鼠精为什么要摄走唐僧？",
+      "original": "老鼠精为什么要摄走唐僧？",
+      "standalone_query": "老鼠精为什么要摄走唐僧？",
+      "retrieval_query": "老鼠精摄走唐僧的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "老鼠精",
+        "唐僧"
+      ],
+      "evidence_focus": [
+        "老鼠精动机",
+        "摄走唐僧原因"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2084.39
+    },
+    {
+      "id": "xyj2-078",
+      "query": "灭法国国王为什么要杀一万个和尚？",
+      "original": "灭法国国王为什么要杀一万个和尚？",
+      "standalone_query": "灭法国国王为什么要杀一万个和尚？",
+      "retrieval_query": "灭法国国王 杀一万个和尚 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "灭法国国王",
+        "和尚"
+      ],
+      "evidence_focus": [
+        "灭法国国王杀和尚的原因",
+        "相关情节描述"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1652.33
+    },
+    {
+      "id": "xyj2-079",
+      "query": "孙悟空用什么办法让灭法国国王回心转意？",
+      "original": "孙悟空用什么办法让灭法国国王回心转意？",
+      "standalone_query": "孙悟空用什么办法让灭法国国王回心转意？",
+      "retrieval_query": "孙悟空 灭法国 国王 回心转意 办法",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "灭法国国王"
+      ],
+      "evidence_focus": [
+        "孙悟空",
+        "灭法国国王",
+        "回心转意"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1716.86
+    },
+    {
+      "id": "xyj2-080",
+      "query": "凤仙郡为什么三年不下雨？",
+      "original": "凤仙郡为什么三年不下雨？",
+      "standalone_query": "凤仙郡为什么三年不下雨？",
+      "retrieval_query": "凤仙郡三年不下雨的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "凤仙郡"
+      ],
+      "evidence_focus": [
+        "不下雨原因",
+        "因果"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1219.7
+    },
+    {
+      "id": "xyj2-081",
+      "query": "玉华州的三位王子拜谁为师？得到了什么兵器？",
+      "original": "玉华州的三位王子拜谁为师？得到了什么兵器？",
+      "standalone_query": "玉华州的三位王子拜谁为师？得到了什么兵器？",
+      "retrieval_query": "玉华州三位王子拜师 兵器",
+      "intent": "character_relation",
+      "entities": [
+        "玉华州",
+        "三位王子"
+      ],
+      "evidence_focus": [
+        "拜师关系",
+        "兵器"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1847.27
+    },
+    {
+      "id": "xyj2-082",
+      "query": "黄狮精偷走了什么？他是什么妖怪？",
+      "original": "黄狮精偷走了什么？他是什么妖怪？",
+      "standalone_query": "黄狮精偷走了什么？他是什么妖怪？",
+      "retrieval_query": "黄狮精偷走了什么 黄狮精是什么妖怪",
+      "intent": "character",
+      "entities": [
+        "黄狮精"
+      ],
+      "evidence_focus": [
+        "黄狮精偷盗物品",
+        "黄狮精妖怪身份"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1749.2
+    },
+    {
+      "id": "xyj2-083",
+      "query": "九灵元圣是什么来历？",
+      "original": "九灵元圣是什么来历？",
+      "standalone_query": "九灵元圣是什么来历？",
+      "retrieval_query": "九灵元圣 来历 背景 身份",
+      "intent": "character",
+      "entities": [
+        "九灵元圣"
+      ],
+      "evidence_focus": [
+        "来历",
+        "背景",
+        "身份"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1457.68
+    },
+    {
+      "id": "xyj2-084",
+      "query": "金平府的三只犀牛精假冒什么骗取供奉？",
+      "original": "金平府的三只犀牛精假冒什么骗取供奉？",
+      "standalone_query": "金平府的三只犀牛精假冒什么骗取供奉？",
+      "retrieval_query": "金平府 三只犀牛精 假冒 佛 骗取供奉",
+      "intent": "factual",
+      "entities": [
+        "金平府",
+        "犀牛精"
+      ],
+      "evidence_focus": [
+        "假冒对象",
+        "骗取供奉"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1573.75
+    },
+    {
+      "id": "xyj2-085",
+      "query": "四木禽星为什么能降服犀牛精？",
+      "original": "四木禽星为什么能降服犀牛精？",
+      "standalone_query": "四木禽星为什么能降服犀牛精？",
+      "retrieval_query": "四木禽星 降服 犀牛精 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "四木禽星",
+        "犀牛精"
+      ],
+      "evidence_focus": [
+        "四木禽星降服犀牛精的原因",
+        "相关原文依据"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2161.92
+    },
+    {
+      "id": "xyj2-086",
+      "query": "天竺国的公主是真公主还是假的？",
+      "original": "天竺国的公主是真公主还是假的？",
+      "standalone_query": "天竺国的公主是真公主还是假的？",
+      "retrieval_query": "天竺国公主 真假 身份",
+      "intent": "factual",
+      "entities": [
+        "天竺国",
+        "公主"
+      ],
+      "evidence_focus": [
+        "天竺国公主身份",
+        "真假公主情节"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1499.03
+    },
+    {
+      "id": "xyj2-087",
+      "query": "玉兔精为什么要假冒天竺国公主？",
+      "original": "玉兔精为什么要假冒天竺国公主？",
+      "standalone_query": "玉兔精为什么要假冒天竺国公主？",
+      "retrieval_query": "玉兔精假冒天竺国公主的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "玉兔精",
+        "天竺国公主"
+      ],
+      "evidence_focus": [
+        "假冒动机",
+        "情节因果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2044.88
+    },
+    {
+      "id": "xyj2-088",
+      "query": "太阴星君收的是什么妖怪？它原本在月宫做什么？",
+      "original": "太阴星君收的是什么妖怪？它原本在月宫做什么？",
+      "standalone_query": "太阴星君收的是什么妖怪？它原本在月宫做什么？",
+      "retrieval_query": "太阴星君 收 妖怪 月宫 职责",
+      "intent": "factual",
+      "entities": [
+        "太阴星君",
+        "月宫"
+      ],
+      "evidence_focus": [
+        "太阴星君收妖事件",
+        "妖怪身份",
+        "月宫职责"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2104.88
+    },
+    {
+      "id": "xyj2-089",
+      "query": "地灵县寇员外遭遇了什么祸事？",
+      "original": "地灵县寇员外遭遇了什么祸事？",
+      "standalone_query": "地灵县寇员外遭遇了什么祸事？",
+      "retrieval_query": "地灵县寇员外 祸事",
+      "intent": "plot_causality",
+      "entities": [
+        "地灵县",
+        "寇员外"
+      ],
+      "evidence_focus": [
+        "寇员外遭遇的祸事",
+        "事件经过",
+        "相关章节"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1912.57
+    },
+    {
+      "id": "xyj2-090",
+      "query": "孙悟空是怎样为寇员外洗清冤屈的？",
+      "original": "孙悟空是怎样为寇员外洗清冤屈的？",
+      "standalone_query": "孙悟空是怎样为寇员外洗清冤屈的？",
+      "retrieval_query": "孙悟空 寇员外 洗清冤屈 情节",
+      "intent": "plot_causality",
+      "entities": [
+        "孙悟空",
+        "寇员外"
+      ],
+      "evidence_focus": [
+        "洗清冤屈的过程",
+        "相关章节"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2033.3
+    },
+    {
+      "id": "xyj2-091",
+      "query": "唐僧师徒初到灵山取到的经书是什么？",
+      "original": "唐僧师徒初到灵山取到的经书是什么？",
+      "standalone_query": "唐僧师徒初到灵山取到的经书是什么？",
+      "retrieval_query": "唐僧师徒初到灵山取到的经书",
+      "intent": "factual",
+      "entities": [
+        "唐僧",
+        "灵山"
+      ],
+      "evidence_focus": [
+        "经书名称",
+        "取经结果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2086.21
+    },
+    {
+      "id": "xyj2-092",
+      "query": "阿难迦叶为什么向唐僧索要人事？",
+      "original": "阿难迦叶为什么向唐僧索要人事？",
+      "standalone_query": "阿难迦叶为什么向唐僧索要人事？",
+      "retrieval_query": "阿难迦叶向唐僧索要人事的原因",
+      "intent": "plot_causality",
+      "entities": [
+        "阿难",
+        "迦叶",
+        "唐僧"
+      ],
+      "evidence_focus": [
+        "索要人事",
+        "原因",
+        "情节因果"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1845.65
+    },
+    {
+      "id": "xyj2-093",
+      "query": "唐僧师徒取经归来再过通天河时发生了什么？",
+      "original": "唐僧师徒取经归来再过通天河时发生了什么？",
+      "standalone_query": "唐僧师徒取经归来再过通天河时发生了什么？",
+      "retrieval_query": "唐僧师徒取经归来再过通天河时发生了什么",
+      "intent": "plot_causality",
+      "entities": [
+        "唐僧",
+        "通天河"
+      ],
+      "evidence_focus": [
+        "通天河",
+        "取经归来",
+        "事件经过"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2158.83
+    },
+    {
+      "id": "xyj2-094",
+      "query": "老鼋为什么把唐僧师徒翻下河？",
+      "original": "老鼋为什么把唐僧师徒翻下河？",
+      "standalone_query": "老鼋为什么把唐僧师徒翻下河？",
+      "retrieval_query": "老鼋 唐僧师徒 翻下河 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "老鼋",
+        "唐僧"
+      ],
+      "evidence_focus": [
+        "老鼋翻河原因",
+        "唐僧师徒落水情节"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2216.21
+    },
+    {
+      "id": "xyj2-095",
+      "query": "唐僧师徒经历的最后一难是什么？发生在取经归来前还是后？",
+      "original": "唐僧师徒经历的最后一难是什么？发生在取经归来前还是后？",
+      "standalone_query": "唐僧师徒经历的最后一难是什么？发生在取经归来前还是后？",
+      "retrieval_query": "唐僧师徒经历的最后一难是什么？发生在取经归来前还是后？",
+      "intent": "plot_causality",
+      "entities": [
+        "唐僧",
+        "师徒"
+      ],
+      "evidence_focus": [
+        "最后一难",
+        "取经归来"
+      ],
+      "confidence": 0.9,
+      "applied": false,
+      "reason": "rewritten",
+      "latency_ms": 2035.27
+    },
+    {
+      "id": "xyj2-096",
+      "query": "唐僧师徒取得真经是在第几回？",
+      "original": "唐僧师徒取得真经是在第几回？",
+      "standalone_query": "唐僧师徒取得真经是在第几回？",
+      "retrieval_query": "唐僧师徒取得真经 第几回",
+      "intent": "chapter_locator",
+      "entities": [
+        "唐僧",
+        "师徒",
+        "真经"
+      ],
+      "evidence_focus": [
+        "章节定位",
+        "取经完成"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1610.64
+    },
+    {
+      "id": "xyj2-097",
+      "query": "唐僧师徒取经共经历了多少难？",
+      "original": "唐僧师徒取经共经历了多少难？",
+      "standalone_query": "唐僧师徒取经共经历了多少难？",
+      "retrieval_query": "唐僧师徒取经共经历了多少难",
+      "intent": "factual",
+      "entities": [
+        "唐僧",
+        "取经"
+      ],
+      "evidence_focus": [
+        "取经难数",
+        "八十一难"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 1992.1
+    },
+    {
+      "id": "xyj2-098",
+      "query": "孙悟空取经功成后被封为什么佛号？",
+      "original": "孙悟空取经功成后被封为什么佛号？",
+      "standalone_query": "孙悟空取经功成后被封为什么佛号？",
+      "retrieval_query": "孙悟空取经功成后被封的佛号",
+      "intent": "factual",
+      "entities": [
+        "孙悟空"
+      ],
+      "evidence_focus": [
+        "佛号",
+        "取经功成"
+      ],
+      "confidence": 0.95,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2387.75
+    },
+    {
+      "id": "xyj2-099",
+      "query": "猪八戒、沙僧、白龙马分别被封为什么？",
+      "original": "猪八戒、沙僧、白龙马分别被封为什么？",
+      "standalone_query": "猪八戒、沙僧、白龙马分别被封为什么？",
+      "retrieval_query": "猪八戒 沙僧 白龙马 封 什么",
+      "intent": "factual",
+      "entities": [
+        "猪八戒",
+        "沙僧",
+        "白龙马"
+      ],
+      "evidence_focus": [
+        "封号",
+        "结局"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2462.14
+    },
+    {
+      "id": "xyj2-100",
+      "query": "唐僧最后被封为什么佛？",
+      "original": "唐僧最后被封为什么佛？",
+      "standalone_query": "唐僧最后被封为什么佛？",
+      "retrieval_query": "唐僧 最后 封 佛 称号",
+      "intent": "factual",
+      "entities": [
+        "唐僧"
+      ],
+      "evidence_focus": [
+        "唐僧封佛",
+        "结局"
+      ],
+      "confidence": 0.9,
+      "applied": true,
+      "reason": "rewritten",
+      "latency_ms": 2038.27
+    }
+  ]
+}

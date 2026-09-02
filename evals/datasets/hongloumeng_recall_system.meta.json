@@ -1,0 +1,27 @@
+{
+  "file_id": "93e25961b957",
+  "source_hash": "1814529064c1e66db8ecd1e4d3e4d15d427301cab45f1142b411dddba384ef6f",
+  "source_path": "E:\\novel\\backend\\data\\raw\\00df98487dd3.txt",
+  "parser": "novel_service",
+  "gold_chunk_policy": "single=2",
+  "works": "红楼梦",
+  "questions": 40,
+  "chunks_total": 1982,
+  "chapters_covered": 36,
+  "category_mix": {
+    "character": 10,
+    "relation_motivation": 10,
+    "plot_causality": 10,
+    "timeline": 5,
+    "chapter_locator": 5
+  },
+  "construction_tier": "chunk-grounded",
+  "notes": [
+    "分类体系与 xiyouji_recall.jsonl 保持一致，但两个数据集的**绝对分数不可直接比较**，见 construction_tier。",
+    "本题集为 chunk-grounded：先读片段再命题，因此题目与金标片段在语义上天然接近，属于\"较容易\"的一档。",
+    "xiyouji_recall.jsonl 为 story-grounded：先凭对故事的了解命题再定位金标，属于\"较难\"的一档。",
+    "已做去泄漏：用 scripts/check_dataset_leak.py 度量「题目与金标片段的最长公共子串」，初版有 5 题达 8~16 字（多为直引回目与原话），已逐题改写至 <=5 字，与西游记同水平。去泄漏后 R@10 由 0.825 降至 0.75，说明泄漏曾贡献约 7.5 个百分点。",
+    "每题金标片段均已用脚本回查数据库校验（evidence_quote 必须出现在对应 chunk 原文中，40/40 通过）。"
+  ],
+  "source_dataset": "hongloumeng_recall.jsonl（system 租户副本）"
+}

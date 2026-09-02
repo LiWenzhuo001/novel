@@ -1,0 +1,22 @@
+# 项目工程化配置：收编原 pytest.ini（已删除，避免双配置），并定义 ruff 规则。
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# 排除第三方与生成目录
+exclude = [
+    ".venv",
+    "alembic/versions",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# 首期只开真实错误类：F（pyflakes：未定义名/未使用导入等）、E9（语法/缩进错误）。
+# 刻意不开 E501（行长）与大部分 pycodestyle，避免一次性引入数百条噪声掩盖真问题。
+# 清零后再按批放开：E7xx → F,E,W → I（导入排序）→ UP（语法现代化）。
+select = ["F", "E9"]

@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 环境变量与密钥（切勿提交）
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+secrets/
+.secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+
+# 本地向量库与上传文件（含个人简历，切勿提交）
+backend/data/chroma/
+backend/data/raw/
+backend/data/
+data/raw/
+data/
+
+# 本地数据库与缓存
+*.db
+*.sqlite
+*.sqlite3
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+build.log
+
+# 日志与临时文件
+*.log
+*.tmp
+
+# IDE / 系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# 前端构建产物
+frontend/dist/
+
+# CodeBuddy 工作目录（项目内部数据，非代码）
+.codebuddy/
+
+# WorkBuddy 工作目录与学习记录（个人数据，非代码）
+.workbuddy/
+.learnings/
+
+# ZCode 工作目录（会话/计划等本地数据，非代码）
+.zcode/
+
+# 安全扫描与测试工具本地产物（非代码）
+.mimosa/
+
+# 测试覆盖率产物（pytest-cov / vitest 运行时生成）
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+coverage/
+
+# Vite 时间戳配置缓存（构建时自动生成，非代码）
+frontend/vite.config.ts.timestamp-*
+
+# 迁移前物理备份（本地回滚用，勿提交）
+.backup-pre-uni-removal/
+
+# 生成的交付物与截图（可能包含本地信息，不提交）
+outputs/
+
+# 评测产物暂缓入库：等西游记 v2 人工判定完成后，删除本段再统一提交
+evals/reports/
+evals/pooling/
+

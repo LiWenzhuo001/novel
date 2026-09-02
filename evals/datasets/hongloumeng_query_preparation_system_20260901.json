@@ -1,0 +1,850 @@
+{
+  "version": 1,
+  "dataset": "E:\\novel\\evals\\datasets\\hongloumeng_recall_system.jsonl",
+  "file_id": "93e25961b957",
+  "source_hash": "1814529064c1e66db8ecd1e4d3e4d15d427301cab45f1142b411dddba384ef6f",
+  "index_version": "Qwen/Qwen3-Embedding-0.6B:1024:650:120:chapter-v3",
+  "generated_at": "2026-08-28T11:25:31.948665+00:00",
+  "cases": [
+    {
+      "id": "hlm-001",
+      "query": "薛蟠的混名是什么？为什么被这样称呼？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "薛蟠的混名是什么？为什么被这样称呼？",
+      "standalone_query": "薛蟠的混名是什么？为什么被这样称呼？",
+      "retrieval_query": "薛蟠 混名 由来",
+      "intent": "character",
+      "entities": [
+        "薛蟠"
+      ],
+      "evidence_focus": [
+        "混名",
+        "称呼由来"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 2288.62,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-002",
+      "query": "张先生给秦可卿诊病，认为病根是什么？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "张先生给秦可卿诊病，认为病根是什么？",
+      "standalone_query": "张先生给秦可卿诊病，认为病根是什么？",
+      "retrieval_query": "张先生 秦可卿 诊病 病根",
+      "intent": "plot_causality",
+      "entities": [
+        "张先生",
+        "秦可卿"
+      ],
+      "evidence_focus": [
+        "病根",
+        "诊断"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1807.48,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-003",
+      "query": "贾母提到一种用来糊窗屉、做帐子的纱罗共有四种颜色，这种纱叫什么？其中银红色的别名又是什么？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "贾母提到一种用来糊窗屉、做帐子的纱罗共有四种颜色，这种纱叫什么？其中银红色的别名又是什么？",
+      "standalone_query": "贾母提到一种用来糊窗屉、做帐子的纱罗共有四种颜色，这种纱叫什么？其中银红色的别名又是什么？",
+      "retrieval_query": "贾母 糊窗屉 做帐子 纱罗 四种颜色 银红色 别名",
+      "intent": "factual",
+      "entities": [
+        "贾母",
+        "纱罗",
+        "银红色"
+      ],
+      "evidence_focus": [
+        "纱罗名称",
+        "银红色别名"
+      ],
+      "confidence": 0.95,
+      "latency_ms": 1823.36,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-004",
+      "query": "秦可卿的兄弟叫什么？宝玉是在哪里见他的？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "秦可卿的兄弟叫什么？宝玉是在哪里见他的？",
+      "standalone_query": "秦可卿的兄弟叫什么？宝玉是在哪里见他的？",
+      "retrieval_query": "秦可卿的兄弟 宝玉 见面地点",
+      "intent": "character_relation",
+      "entities": [
+        "秦可卿",
+        "宝玉"
+      ],
+      "evidence_focus": [
+        "秦可卿兄弟姓名",
+        "宝玉与秦可卿兄弟见面地点"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1586.0,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-005",
+      "query": "海棠诗社第一次评诗，李纨把潇湘妃子和怡红公子排在第几位？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "海棠诗社第一次评诗，李纨把潇湘妃子和怡红公子排在第几位？",
+      "standalone_query": "海棠诗社第一次评诗，李纨把潇湘妃子和怡红公子排在第几位？",
+      "retrieval_query": "海棠诗社第一次评诗 李纨 排名 潇湘妃子 怡红公子",
+      "intent": "factual",
+      "entities": [
+        "李纨",
+        "潇湘妃子",
+        "怡红公子"
+      ],
+      "evidence_focus": [
+        "海棠诗社第一次评诗",
+        "排名"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1621.02,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-006",
+      "query": "妙玉梦魇后，道婆求的签说她触犯了什么？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "妙玉梦魇后，道婆求的签说她触犯了什么？",
+      "standalone_query": "妙玉梦魇后，道婆求的签说她触犯了什么？",
+      "retrieval_query": "妙玉梦魇 道婆求签 触犯",
+      "intent": "plot_causality",
+      "entities": [
+        "妙玉",
+        "道婆"
+      ],
+      "evidence_focus": [
+        "梦魇",
+        "求签",
+        "触犯"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1734.16,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-007",
+      "query": "贾政怎样评价鸳鸯的死？要求小辈怎么做？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "贾政怎样评价鸳鸯的死？要求小辈怎么做？",
+      "standalone_query": "贾政怎样评价鸳鸯的死？要求小辈怎么做？",
+      "retrieval_query": "贾政 评价 鸳鸯 死 要求 小辈 怎么做",
+      "intent": "character",
+      "entities": [
+        "贾政",
+        "鸳鸯"
+      ],
+      "evidence_focus": [
+        "贾政对鸳鸯之死的评价",
+        "贾政对小辈的要求"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1705.95,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-008",
+      "query": "黛玉每年到什么节气之后必定犯嗽疾？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "黛玉每年到什么节气之后必定犯嗽疾？",
+      "standalone_query": "黛玉每年到什么节气之后必定犯嗽疾？",
+      "retrieval_query": "黛玉 每年 节气 犯嗽疾",
+      "intent": "factual",
+      "entities": [
+        "黛玉"
+      ],
+      "evidence_focus": [
+        "黛玉",
+        "节气",
+        "嗽疾"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1725.29,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-009",
+      "query": "薛蟠想跟着谁出门做买卖？薛姨妈为什么拦他？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "薛蟠想跟着谁出门做买卖？薛姨妈为什么拦他？",
+      "standalone_query": "薛蟠想跟着谁出门做买卖？薛姨妈为什么拦他？",
+      "retrieval_query": "薛蟠 跟着 谁 出门 做买卖 薛姨妈 拦",
+      "intent": "plot_causality",
+      "entities": [
+        "薛蟠",
+        "薛姨妈"
+      ],
+      "evidence_focus": [
+        "薛蟠跟随对象",
+        "薛姨妈阻拦原因"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1694.86,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-010",
+      "query": "有个人一进贾府，开口头一句就问宝玉在不在家，这个人是谁？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "有个人一进贾府，开口头一句就问宝玉在不在家，这个人是谁？",
+      "standalone_query": "有个人一进贾府，开口头一句就问宝玉在不在家，这个人是谁？",
+      "retrieval_query": "进贾府 开口就问 宝玉在不在家 是谁",
+      "intent": "character",
+      "entities": [
+        "贾府",
+        "宝玉"
+      ],
+      "evidence_focus": [
+        "人物身份",
+        "对话场景"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1701.67,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-011",
+      "query": "贾环说是谁欺负了他、赖他的钱？赵姨娘怎么骂他？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "贾环说是谁欺负了他、赖他的钱？赵姨娘怎么骂他？",
+      "standalone_query": "贾环说是谁欺负了他、赖他的钱？赵姨娘怎么骂他？",
+      "retrieval_query": "贾环 赵姨娘 欺负 赖钱 骂",
+      "intent": "character_relation",
+      "entities": [
+        "贾环",
+        "赵姨娘"
+      ],
+      "evidence_focus": [
+        "贾环被欺负的事件",
+        "赵姨娘骂贾环的具体内容"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 2001.55,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-012",
+      "query": "凤姐为什么派来旺儿去找节度使云光？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "凤姐为什么派来旺儿去找节度使云光？",
+      "standalone_query": "凤姐为什么派来旺儿去找节度使云光？",
+      "retrieval_query": "凤姐 派 来旺儿 找 节度使 云光 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "凤姐",
+        "来旺儿",
+        "云光"
+      ],
+      "evidence_focus": [
+        "凤姐派来旺儿找云光的原因",
+        "相关情节因果"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1742.45,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-013",
+      "query": "贾琏想把尤家那位姑娘悄悄收进房里，贾蓉拿什么理由去说服贾珍？尤氏又是什么态度？",
+      "applied": false,
+      "reason": "invented_entity",
+      "original": "贾琏想把尤家那位姑娘悄悄收进房里，贾蓉拿什么理由去说服贾珍？尤氏又是什么态度？",
+      "standalone_query": "贾琏想把尤家那位姑娘悄悄收进房里，贾蓉拿什么理由去说服贾珍？尤氏又是什么态度？",
+      "retrieval_query": "贾琏想把尤家那位姑娘悄悄收进房里，贾蓉拿什么理由去说服贾珍？尤氏又是什么态度？",
+      "intent": "other",
+      "entities": [],
+      "evidence_focus": [],
+      "confidence": 0.0,
+      "latency_ms": 1561.56,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-014",
+      "query": "王夫人明知该管教宝玉，为什么还是纵着他？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "王夫人明知该管教宝玉，为什么还是纵着他？",
+      "standalone_query": "王夫人明知该管教宝玉，为什么还是纵着他？",
+      "retrieval_query": "王夫人 纵容 宝玉 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "王夫人",
+        "宝玉"
+      ],
+      "evidence_focus": [
+        "王夫人对宝玉的管教态度",
+        "纵容行为的具体情节"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1952.81,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-015",
+      "query": "宝钗为什么说家里的雪浪纸不中用于画园子？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "宝钗为什么说家里的雪浪纸不中用于画园子？",
+      "standalone_query": "宝钗为什么说家里的雪浪纸不中用于画园子？",
+      "retrieval_query": "宝钗 雪浪纸 不中用 画园子 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "宝钗",
+        "雪浪纸"
+      ],
+      "evidence_focus": [
+        "雪浪纸特性",
+        "画园子要求",
+        "宝钗解释"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1753.66,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-016",
+      "query": "黛玉吃了闭门羹之后跟宝玉闹别扭，她具体埋怨宝玉哪件事？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "黛玉吃了闭门羹之后跟宝玉闹别扭，她具体埋怨宝玉哪件事？",
+      "standalone_query": "黛玉吃了闭门羹之后跟宝玉闹别扭，她具体埋怨宝玉哪件事？",
+      "retrieval_query": "黛玉因晴雯不开门误会宝玉，埋怨宝玉的具体事件",
+      "intent": "plot_causality",
+      "entities": [
+        "闭门羹"
+      ],
+      "evidence_focus": [
+        "黛玉埋怨宝玉的具体事件",
+        "闭门羹事件"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1651.54,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-017",
+      "query": "宝玉引了《西厢记》里哪两句话把黛玉惹恼了？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "宝玉引了《西厢记》里哪两句话把黛玉惹恼了？",
+      "standalone_query": "宝玉引了《西厢记》里哪两句话把黛玉惹恼了？",
+      "retrieval_query": "宝玉 西厢记 两句 黛玉 恼",
+      "intent": "factual",
+      "entities": [
+        "西厢记"
+      ],
+      "evidence_focus": [
+        "原文引文",
+        "情节因果"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1662.9,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-018",
+      "query": "袭人向王夫人进言，说宝玉心里和谁更好？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "袭人向王夫人进言，说宝玉心里和谁更好？",
+      "standalone_query": "袭人向王夫人进言，说宝玉心里和谁更好？",
+      "retrieval_query": "袭人向王夫人进言 宝玉 心里 和谁更好",
+      "intent": "character_relation",
+      "entities": [
+        "袭人",
+        "王夫人",
+        "宝玉"
+      ],
+      "evidence_focus": [
+        "袭人进言内容",
+        "宝玉与黛玉、宝钗的关系"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1764.85,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-019",
+      "query": "薛姨妈一口咬定宝玉挨打是儿子告的状，她是怎么责骂薛蟠的？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "薛姨妈一口咬定宝玉挨打是儿子告的状，她是怎么责骂薛蟠的？",
+      "standalone_query": "薛姨妈一口咬定宝玉挨打是儿子告的状，她是怎么责骂薛蟠的？",
+      "retrieval_query": "薛姨妈责骂薛蟠 宝玉挨打 告状",
+      "intent": "plot_causality",
+      "entities": [
+        "薛姨妈",
+        "薛蟠",
+        "宝玉"
+      ],
+      "evidence_focus": [
+        "薛姨妈责骂薛蟠的原话",
+        "宝玉挨打事件"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1727.05,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-020",
+      "query": "凤姐说黛玉临死时咬牙切齿恨着谁？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "凤姐说黛玉临死时咬牙切齿恨着谁？",
+      "standalone_query": "凤姐说黛玉临死时咬牙切齿恨着谁？",
+      "retrieval_query": "凤姐 黛玉 临死 咬牙切齿 恨 谁",
+      "intent": "plot_causality",
+      "entities": [
+        "凤姐",
+        "黛玉"
+      ],
+      "evidence_focus": [
+        "凤姐言论",
+        "黛玉临死",
+        "恨的对象"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1782.43,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-021",
+      "query": "薛蟠进京时为什么“心中暗喜”？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "薛蟠进京时为什么“心中暗喜”？",
+      "standalone_query": "薛蟠进京时为什么心中暗喜？",
+      "retrieval_query": "薛蟠进京 心中暗喜 原因",
+      "intent": "plot_causality",
+      "entities": [
+        "薛蟠"
+      ],
+      "evidence_focus": [
+        "薛蟠进京",
+        "心中暗喜",
+        "原因"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1435.05,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-022",
+      "query": "甄士隐解完《好了歌注》之后，跟着谁走了？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "甄士隐解完《好了歌注》之后，跟着谁走了？",
+      "standalone_query": "甄士隐解完《好了歌注》之后，跟着谁走了？",
+      "retrieval_query": "甄士隐 解完 好了歌注 之后 跟着谁 走了",
+      "intent": "plot_causality",
+      "entities": [
+        "甄士隐",
+        "好了歌注"
+      ],
+      "evidence_focus": [
+        "甄士隐去向",
+        "好了歌注之后的情节"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1911.96,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-023",
+      "query": "宝玉脸上被烫出燎泡后，王夫人命人取什么药来敷？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "宝玉脸上被烫出燎泡后，王夫人命人取什么药来敷？",
+      "standalone_query": "宝玉脸上被烫出燎泡后，王夫人命人取什么药来敷？",
+      "retrieval_query": "宝玉脸上被烫出燎泡 王夫人 取药 敷",
+      "intent": "factual",
+      "entities": [
+        "宝玉",
+        "王夫人"
+      ],
+      "evidence_focus": [
+        "药物名称",
+        "敷药动作"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1689.24,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-024",
+      "query": "宝玉误踢袭人之后，袭人出现了什么症状？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "宝玉误踢袭人之后，袭人出现了什么症状？",
+      "standalone_query": "宝玉误踢袭人之后，袭人出现了什么症状？",
+      "retrieval_query": "宝玉误踢袭人 袭人 症状",
+      "intent": "plot_causality",
+      "entities": [
+        "袭人"
+      ],
+      "evidence_focus": [
+        "袭人症状",
+        "误踢事件后果"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1738.07,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-025",
+      "query": "贾敬生日那天，有哪几家王爷差人送了寿礼？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "贾敬生日那天，有哪几家王爷差人送了寿礼？",
+      "standalone_query": "贾敬生日那天，有哪几家王爷差人送了寿礼？",
+      "retrieval_query": "贾敬生日 王爷 送寿礼",
+      "intent": "factual",
+      "entities": [
+        "贾敬"
+      ],
+      "evidence_focus": [
+        "贾敬生日",
+        "王爷送寿礼"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1776.78,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-026",
+      "query": "北静王水溶初见宝玉时，特意要看看他的什么？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "北静王水溶初见宝玉时，特意要看看他的什么？",
+      "standalone_query": "北静王水溶初见宝玉时，特意要看看他的什么？",
+      "retrieval_query": "北静王水溶初见宝玉 看 什么",
+      "intent": "factual",
+      "entities": [
+        "北静王水溶"
+      ],
+      "evidence_focus": [
+        "初见场景",
+        "具体动作"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1720.06,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-027",
+      "query": "元妃省亲赏给贾母哪些东西？又定在什么时辰回銮？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "元妃省亲赏给贾母哪些东西？又定在什么时辰回銮？",
+      "standalone_query": "元妃省亲赏给贾母哪些东西？又定在什么时辰回銮？",
+      "retrieval_query": "元妃省亲 赏赐 贾母 物品 回銮 时辰",
+      "intent": "factual",
+      "entities": [
+        "元妃",
+        "贾母"
+      ],
+      "evidence_focus": [
+        "赏赐物品清单",
+        "回銮时辰"
+      ],
+      "confidence": 0.95,
+      "latency_ms": 1858.14,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-028",
+      "query": "贵妃派人往道观送了银子，要在月初头三天做一场什么法事？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "贵妃派人往道观送了银子，要在月初头三天做一场什么法事？",
+      "standalone_query": "贵妃派人往道观送了银子，要在月初头三天做一场什么法事？",
+      "retrieval_query": "贵妃 道观 送银子 月初头三天 法事",
+      "intent": "factual",
+      "entities": [
+        "贵妃",
+        "道观"
+      ],
+      "evidence_focus": [
+        "法事名称",
+        "时间",
+        "人物"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1566.45,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-029",
+      "query": "贾芸进怡红院时，看到匾额上题的是哪四个字？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "贾芸进怡红院时，看到匾额上题的是哪四个字？",
+      "standalone_query": "贾芸进怡红院时，看到匾额上题的是哪四个字？",
+      "retrieval_query": "贾芸进怡红院 匾额 四个字",
+      "intent": "factual",
+      "entities": [
+        "贾芸",
+        "怡红院"
+      ],
+      "evidence_focus": [
+        "匾额题字"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1527.68,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-030",
+      "query": "甄家因为什么获罪？贾母听后说眼下什么才是正经？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "甄家因为什么获罪？贾母听后说眼下什么才是正经？",
+      "standalone_query": "甄家因为什么获罪？贾母听后说眼下什么才是正经？",
+      "retrieval_query": "甄家获罪原因 贾母 眼下正经",
+      "intent": "plot_causality",
+      "entities": [
+        "甄家",
+        "贾母"
+      ],
+      "evidence_focus": [
+        "甄家获罪原因",
+        "贾母评论"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1525.07,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-031",
+      "query": "诗社从“海棠社”改成了什么社？谁做社主？定在哪天、哪里起社？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "诗社从“海棠社”改成了什么社？谁做社主？定在哪天、哪里起社？",
+      "standalone_query": "诗社从“海棠社”改成了什么社？谁做社主？定在哪天、哪里起社？",
+      "retrieval_query": "诗社 海棠社 改 社名 社主 起社 日期 地点",
+      "intent": "factual",
+      "entities": [
+        "海棠社"
+      ],
+      "evidence_focus": [
+        "诗社改名",
+        "社主",
+        "起社日期",
+        "起社地点"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1808.8,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-032",
+      "query": "探春远嫁之后，大观园为什么益发寂寞？先后发生了哪些事？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "探春远嫁之后，大观园为什么益发寂寞？先后发生了哪些事？",
+      "standalone_query": "探春远嫁之后，大观园为什么益发寂寞？先后发生了哪些事？",
+      "retrieval_query": "探春远嫁后大观园益发寂寞的原因及后续发生的事件",
+      "intent": "plot_causality",
+      "entities": [
+        "探春",
+        "大观园"
+      ],
+      "evidence_focus": [
+        "探春远嫁",
+        "大观园寂寞",
+        "后续事件"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 2071.7,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-033",
+      "query": "宝玉离开大观园将近一年后再去潇湘馆，听见了什么？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "宝玉离开大观园将近一年后再去潇湘馆，听见了什么？",
+      "standalone_query": "宝玉离开大观园将近一年后再去潇湘馆，听见了什么？",
+      "retrieval_query": "宝玉离开大观园将近一年后再去潇湘馆，听见了什么",
+      "intent": "plot_causality",
+      "entities": [
+        "宝玉",
+        "潇湘馆"
+      ],
+      "evidence_focus": [
+        "听见的内容",
+        "情节细节"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1635.8,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-034",
+      "query": "凤姐咽气的时候，是谁来报的信？当时宝玉宝钗在做什么？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "凤姐咽气的时候，是谁来报的信？当时宝玉宝钗在做什么？",
+      "standalone_query": "凤姐咽气的时候，是谁来报的信？当时宝玉宝钗在做什么？",
+      "retrieval_query": "凤姐咽气 报信 宝玉 宝钗 在做什么",
+      "intent": "plot_causality",
+      "entities": [
+        "凤姐",
+        "宝玉",
+        "宝钗"
+      ],
+      "evidence_focus": [
+        "凤姐咽气",
+        "报信人",
+        "宝玉宝钗行为"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1814.27,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-035",
+      "query": "宝玉中第七名举人时，贾兰中了第几名？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "宝玉中第七名举人时，贾兰中了第几名？",
+      "standalone_query": "宝玉中第七名举人时，贾兰中了第几名？",
+      "retrieval_query": "宝玉中第七名举人时，贾兰中了第几名",
+      "intent": "factual",
+      "entities": [
+        "贾兰"
+      ],
+      "evidence_focus": [
+        "科举名次",
+        "第七名举人",
+        "贾兰名次"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1687.92,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-036",
+      "query": "傻丫头捡到绣春囊、迎春的金凤被人偷去典当却不敢追问，这些情节在第几回？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "傻丫头捡到绣春囊、迎春的金凤被人偷去典当却不敢追问，这些情节在第几回？",
+      "standalone_query": "傻丫头捡到绣春囊、迎春的金凤被人偷去典当却不敢追问，这些情节在第几回？",
+      "retrieval_query": "傻丫头捡到绣春囊 迎春金凤被偷典当 章节",
+      "intent": "chapter_locator",
+      "entities": [
+        "傻丫头",
+        "绣春囊",
+        "迎春",
+        "金凤"
+      ],
+      "evidence_focus": [
+        "章节定位",
+        "情节对应"
+      ],
+      "confidence": 0.95,
+      "latency_ms": 2052.39,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-037",
+      "query": "香菱被丈夫打骂、又有道士胡乱开了一剂治妒的方子，这些情节在第几回？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "香菱被丈夫打骂、又有道士胡乱开了一剂治妒的方子，这些情节在第几回？",
+      "standalone_query": "香菱被丈夫打骂、又有道士胡乱开了一剂治妒的方子，这些情节在第几回？",
+      "retrieval_query": "香菱被丈夫打骂 道士 治妒方子 回目",
+      "intent": "chapter_locator",
+      "entities": [
+        "香菱"
+      ],
+      "evidence_focus": [
+        "回目定位",
+        "情节描述"
+      ],
+      "confidence": 0.95,
+      "latency_ms": 1901.59,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-038",
+      "query": "尤氏屋地上摆的那个取暖用的大火盆，是什么样式和质地的？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "尤氏屋地上摆的那个取暖用的大火盆，是什么样式和质地的？",
+      "standalone_query": "尤氏屋地上摆的那个取暖用的大火盆，是什么样式和质地的？",
+      "retrieval_query": "尤氏 屋 地上 大火盆 样式 质地",
+      "intent": "factual",
+      "entities": [
+        "尤氏",
+        "大火盆"
+      ],
+      "evidence_focus": [
+        "样式",
+        "质地"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 2160.19,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-039",
+      "query": "薛宝琴说自己作了十首什么诗、暗隐了什么东西？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "薛宝琴说自己作了十首什么诗、暗隐了什么东西？",
+      "standalone_query": "薛宝琴说自己作了十首什么诗、暗隐了什么东西？",
+      "retrieval_query": "薛宝琴 十首 诗 暗隐 谜底",
+      "intent": "factual",
+      "entities": [
+        "薛宝琴"
+      ],
+      "evidence_focus": [
+        "十首诗名",
+        "暗隐事物"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1654.23,
+      "source": "llm"
+    },
+    {
+      "id": "hlm-040",
+      "query": "林之孝家的夜里到怡红院查上夜，叮嘱了众人什么？",
+      "applied": true,
+      "reason": "rewritten",
+      "original": "林之孝家的夜里到怡红院查上夜，叮嘱了众人什么？",
+      "standalone_query": "林之孝家的夜里到怡红院查上夜，叮嘱了众人什么？",
+      "retrieval_query": "林之孝家的 夜里 怡红院 查上夜 叮嘱 众人",
+      "intent": "factual",
+      "entities": [
+        "林之孝家的",
+        "怡红院"
+      ],
+      "evidence_focus": [
+        "查上夜",
+        "叮嘱内容"
+      ],
+      "confidence": 0.9,
+      "latency_ms": 1656.08,
+      "source": "llm"
+    }
+  ]
+}

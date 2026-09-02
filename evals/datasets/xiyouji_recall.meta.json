@@ -1,0 +1,7 @@
+{
+  "file_id": "c959fb4c1a30",
+  "source_hash": "58bad5bbc4edc25e36950e4e9219e7231e733e6a527bc2eb4fa9298105fb90f0",
+  "source_path": "E:\\novel\\backend\\data\\raw\\c959fb4c1a30.txt",
+  "parser": "novel_service",
+  "gold_chunk_policy": "direct=2, supporting=1"
+}

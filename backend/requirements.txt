@@ -1,0 +1,52 @@
+# ===== Web 框架 =====
+fastapi==0.140.13
+uvicorn[standard]==0.52.0
+python-dotenv==1.0.1
+sse-starlette==3.4.6
+python-multipart==0.0.32
+httpx==0.28.1
+
+# ===== LangChain v1 生态 =====
+# 说明：langchain 1.x 起核心在 langchain-core / langchain-classic / 各集成子包；
+# 本项目未用 langchain 元包的 agent API，故子包升级即可平滑迁移。
+langchain==1.3.14
+langchain-core==1.5.2
+langchain-classic==1.0.8
+langchain-openai==1.4.1
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+langchain-huggingface==1.2.2
+
+# ===== Agent 工作流（LangGraph）=====
+langgraph==1.2.9
+langgraph-checkpoint==4.1.1
+
+# ===== MCP（按需接入外部工具）=====
+mcp==2.0.0
+langchain-mcp-adapters==0.3.1
+
+# ===== 向量库 + 关系库（PostgreSQL + pgvector 单库统一）=====
+pgvector==0.3.1
+psycopg2-binary==2.9.10   # 同步驱动（兼容/工具脚本）
+asyncpg==0.31.0           # 异步驱动（主用）
+
+# ===== 本地 embedding / reranker =====
+sentence-transformers==2.7.0
+jieba==0.42.1
+# PyTorch 按部署环境安装：
+# Windows + NVIDIA GPU（本项目本地 BGE-M3 推荐）：
+#   python -m pip install --index-url https://download.pytorch.org/whl/cu126 torch==2.6.0
+# CPU / Docker：保留当前环境中的 CPU 版 torch 即可。
+
+# ===== 文档解析 =====
+pypdf==4.3.1
+python-docx==1.1.0
+docx2txt==0.8
+
+# ===== ORM / 迁移 =====
+sqlalchemy==2.0.35
+alembic==1.13.3
+
+# ===== 测试 =====
+pytest==9.1.1
+pytest-asyncio==1.4.0

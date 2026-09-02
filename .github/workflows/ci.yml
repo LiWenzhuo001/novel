@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一分支的新推送自动取消旧运行，避免排队堆积
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install ruff==0.6.9
+      # 只检查真实错误类（F/pyflakes + E9/语法），规则在 backend/pyproject.toml
+      - run: ruff check app tests scripts
+
+  test-nodb:
+    # 不依赖数据库：全部为 monkeypatch 纯单测。无 service container，秒级反馈。
+    # 排除 test_api.py / test_auth.py —— 二者经 TestClient → lifespan → init_db() 连库。
+    name: test (no database)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: pip install pytest pytest-asyncio
+      - name: pytest (no database)
+        env:
+          # CI 无 backend/.env，config.py 的 load_dotenv() 会静默跳过并走代码默认值。
+          # 这正好让本 job 顺带校验 config.py 中的默认值（见 test_config_defaults.py）。
+          HF_HUB_OFFLINE: "1"
+          POSTGRES_HOST: 127.0.0.1
+        run: |
+          python -m pytest tests/ \
+            --ignore=tests/test_api.py \
+            --ignore=tests/test_auth.py \
+            --ignore=tests/test_chat_api.py \
+            -q
+
+  test-db:
+    # 需要 PostgreSQL + pgvector。首期允许失败：先把不依赖 DB 的那 114 项守住，
+    # 待此 job 稳定后移除 continue-on-error。
+    name: test (with database)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        # 与 docker-compose.yml 同版本（paradedb/paradedb:0.18.6-pg16，内含 pgvector + pg_search）。
+        # BM25 词法通道默认开启且 fail-fast，CI 必须与生产同镜像，否则涉及检索的测试会因
+        # pg_search 缺失直接报错（这是预期行为，不是 bug）。
+        image: paradedb/paradedb:0.18.6-pg16
+        env:
+          POSTGRES_DB: job_agent
+          POSTGRES_USER: job_agent
+          POSTGRES_PASSWORD: job_agent123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: pip install pytest pytest-asyncio
+      - name: 用 Alembic 建库
+        env:
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: job_agent
+          POSTGRES_USER: job_agent
+          POSTGRES_PASSWORD: job_agent123
+          HF_HUB_OFFLINE: "1"
+        run: alembic upgrade head
+      - name: pytest (API + auth)
+        env:
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: job_agent
+          POSTGRES_USER: job_agent
+          POSTGRES_PASSWORD: job_agent123
+          HF_HUB_OFFLINE: "1"
+          # CI 不评估重排质量（由离线评测管）：默认开启的重排需要 2.3GB 模型，
+          # 离线环境无法加载，关闭以保持 API/auth 测试聚焦。
+          ENABLE_RERANKER: "false"
+        run: python -m pytest tests/test_api.py tests/test_auth.py tests/test_chat_api.py -q

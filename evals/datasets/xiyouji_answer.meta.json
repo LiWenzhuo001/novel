@@ -1,0 +1,8 @@
+{
+  "source_dataset": "E:\\novel\\evals\\datasets\\xiyouji_recall.jsonl",
+  "subset": 20,
+  "stratified_from": 40,
+  "validation_weak": 2,
+  "model": "deepseek-v4-flash",
+  "generated_at": "2026-08-28T13:37:00.896808+00:00"
+}

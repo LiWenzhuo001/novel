@@ -1,0 +1,362 @@
+[
+  {
+    "id": "character-001",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-002",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-003",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-004",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-005",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-006",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-007",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-008",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-009",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "character-010",
+    "category": "character",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-001",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-002",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-003",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-004",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-005",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-006",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-007",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-008",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-009",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "relationship-010",
+    "category": "relationship",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-001",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-002",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-003",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-004",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-005",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-006",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-007",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-008",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-009",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "plot-010",
+    "category": "plot",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "timeline-001",
+    "category": "timeline",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "timeline-002",
+    "category": "timeline",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "timeline-003",
+    "category": "timeline",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "timeline-004",
+    "category": "timeline",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "timeline-005",
+    "category": "timeline",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "locator-001",
+    "category": "locator",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "locator-002",
+    "category": "locator",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "locator-003",
+    "category": "locator",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "locator-004",
+    "category": "locator",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  },
+  {
+    "id": "locator-005",
+    "category": "locator",
+    "query": "",
+    "file_id": "",
+    "relevant_chunks": [],
+    "validated": false,
+    "notes": "填写问题与相关 file_id/chapter_no/chunk_no，并经人工核对后设为 true"
+  }
+]

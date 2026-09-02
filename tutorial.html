@@ -1,0 +1,1967 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小说智读 RAG 问答系统 · 循序渐进源码教程</title>
+<style>
+:root{
+  --bg:#f6f7fb; --panel:#ffffff; --ink:#1f2430; --ink-soft:#3d4352; --ink-mute:#6b7280;
+  --ink-faint:#9aa1af; --line:rgba(15,20,40,.10); --line-soft:rgba(15,20,40,.06);
+  --brand:#4f46e5; --brand-soft:#eef0ff; --brand-mid:#c7cbff;
+  --teal:#0d9488; --teal-soft:#e6faf7; --amber:#b45309; --amber-soft:#fef3e2;
+  --rose:#be123c; --rose-soft:#fdeef1; --green:#15803d; --green-soft:#e9f9ee;
+  --code-bg:#0f1524; --code-ink:#dbe2f4; --code-head:#151d33;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 6px 20px -8px rgba(16,24,40,.12);
+  --radius:14px; --mono:ui-monospace,"Cascadia Code",Consolas,"JetBrains Mono","SFMono-Regular",Menlo,monospace;
+}
+[data-theme="dark"]{
+  --bg:#0d1117; --panel:#161b27; --ink:#e6e9f2; --ink-soft:#c4c9d8; --ink-mute:#98a0b3;
+  --ink-faint:#6b7386; --line:rgba(230,235,255,.12); --line-soft:rgba(230,235,255,.07);
+  --brand:#8b93ff; --brand-soft:#22263f; --brand-mid:#3d4374;
+  --teal:#4dd0c2; --teal-soft:#12302e; --amber:#e5a54b; --amber-soft:#332613;
+  --rose:#f17c98; --rose-soft:#331722; --green:#6fd599; --green-soft:#12291c;
+  --code-bg:#0a0e18; --code-ink:#d5dcef; --code-head:#111726;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -10px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.85 -apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased}
+::selection{background:var(--brand-mid)}
+a{color:var(--brand);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ===== 顶部进度与工具条 ===== */
+#progress{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,var(--brand),var(--teal));z-index:60;transition:width .1s}
+.topbar{position:fixed;top:0;left:0;right:0;z-index:50;height:56px;display:flex;align-items:center;gap:12px;
+  padding:0 16px;background:var(--panel);
+  background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line-soft)}
+.topbar .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:14.5px;white-space:nowrap}
+.topbar .brand .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--brand),#8b5cf6);
+  color:#fff;display:grid;place-items:center;font-size:15px;flex:none}
+.topbar .crumb{font-size:12.5px;color:var(--ink-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.topbar .btns{display:flex;gap:8px}
+.tbtn{border:1px solid var(--line);background:var(--panel);color:var(--ink-soft);border-radius:9px;
+  height:34px;padding:0 11px;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.tbtn:hover{border-color:var(--brand);color:var(--brand)}
+
+/* ===== 布局 ===== */
+.layout{display:flex;max-width:1460px;margin:0 auto;padding-top:56px}
+nav.toc{width:262px;flex:none;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;
+  padding:22px 14px 40px;border-right:1px solid var(--line-soft);scrollbar-width:thin}
+nav.toc h4{margin:16px 6px 8px;font-size:11px;letter-spacing:.14em;color:var(--ink-faint);text-transform:uppercase}
+nav.toc a{display:flex;gap:8px;align-items:baseline;padding:6px 10px;border-radius:8px;color:var(--ink-mute);
+  font-size:13px;line-height:1.45;margin:1px 0}
+nav.toc a .n{font-size:10.5px;color:var(--ink-faint);font-family:var(--mono);min-width:20px}
+nav.toc a:hover{background:var(--brand-soft);color:var(--brand);text-decoration:none}
+nav.toc a.active{background:var(--brand-soft);color:var(--brand);font-weight:600}
+main{flex:1;min-width:0;padding:30px 22px 90px}
+.page{max-width:880px;margin:0 auto}
+.backtop{position:fixed;right:22px;bottom:24px;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink-soft);cursor:pointer;display:none;place-items:center;box-shadow:var(--shadow);z-index:40}
+.backtop.show{display:grid}
+
+/* ===== 封面 ===== */
+.hero{padding:34px 0 8px}
+.hero .kicker{font-size:12px;letter-spacing:.2em;color:var(--brand);font-weight:700;text-transform:uppercase}
+.hero h1{font-size:clamp(26px,4vw,38px);line-height:1.3;margin:10px 0 12px;letter-spacing:.01em}
+.hero h1 .grad{background:linear-gradient(90deg,var(--brand),#8b5cf6,var(--teal));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.sub{color:var(--ink-mute);font-size:15.5px;max-width:720px;margin:0 0 18px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}
+.chip{font-size:12px;padding:5px 11px;border-radius:999px;background:var(--brand-soft);color:var(--brand);border:1px solid transparent}
+.chip.t{background:var(--teal-soft);color:var(--teal)} .chip.a{background:var(--amber-soft);color:var(--amber)}
+.hero .start{display:inline-flex;align-items:center;gap:8px;background:var(--brand);color:#fff;font-weight:600;
+  border-radius:11px;padding:11px 22px;font-size:14px;border:none;cursor:pointer}
+.hero .start:hover{filter:brightness(1.08);text-decoration:none}
+
+/* ===== 章节 ===== */
+section.chapter{margin:58px 0 0;scroll-margin-top:72px}
+.ch-head{display:flex;align-items:center;gap:14px;margin:0 0 6px}
+.ch-num{flex:none;width:46px;height:46px;border-radius:13px;background:var(--panel);border:1px solid var(--line);
+  display:grid;place-items:center;font-family:var(--mono);font-weight:700;color:var(--brand);font-size:16px;box-shadow:var(--shadow)}
+.ch-head h2{font-size:23px;margin:0;line-height:1.35}
+.ch-lead{color:var(--ink-mute);font-size:14px;margin:2px 0 20px;padding-left:60px}
+h3{font-size:17.5px;margin:34px 0 10px;display:flex;align-items:center;gap:9px}
+h3 .dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--brand)}
+h4{font-size:15px;margin:22px 0 8px}
+p{margin:10px 0}
+ul,ol{margin:8px 0;padding-left:24px}
+li{margin:5px 0}
+strong{color:var(--ink)}
+hr.sep{border:none;border-top:1px dashed var(--line);margin:34px 0}
+
+/* ===== 卡片与标注框 ===== */
+.card{background:var(--panel);border:1px solid var(--line-soft);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow);margin:16px 0}
+.callout{border-radius:var(--radius);padding:15px 18px;margin:16px 0;border:1px solid var(--line-soft);background:var(--panel);position:relative;box-shadow:var(--shadow)}
+.callout .tag{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;letter-spacing:.06em;
+  padding:3px 10px;border-radius:999px;margin-bottom:9px}
+.callout.concept{border-left:3px solid var(--brand)} .callout.concept .tag{background:var(--brand-soft);color:var(--brand)}
+.callout.analogy{border-left:3px solid #8b5cf6} .callout.analogy .tag{background:rgba(139,92,246,.12);color:#8b5cf6}
+.callout.why{border-left:3px solid var(--teal)} .callout.why .tag{background:var(--teal-soft);color:var(--teal)}
+.callout.warn{border-left:3px solid var(--amber)} .callout.warn .tag{background:var(--amber-soft);color:var(--amber)}
+.callout.sum{border-left:3px solid var(--green)} .callout.sum .tag{background:var(--green-soft);color:var(--green)}
+.callout.case{border-left:3px solid var(--rose)} .callout.case .tag{background:var(--rose-soft);color:var(--rose)}
+.callout p:first-of-type{margin-top:2px} .callout p:last-child,.callout ul:last-child{margin-bottom:2px}
+
+/* ===== 代码块 ===== */
+pre.code{margin:16px 0;background:var(--code-bg);color:var(--code-ink);border-radius:12px;overflow:hidden;
+  box-shadow:var(--shadow);font-size:13px;line-height:1.7}
+pre.code .hd{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--code-head);
+  font-size:11.5px;color:#8e99b8;border-bottom:1px solid rgba(255,255,255,.06)}
+pre.code .hd .file{font-family:var(--mono);color:#b9c3e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+pre.code .hd .lang{margin-left:auto;flex:none;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid rgba(255,255,255,.14);border-radius:5px;padding:1px 7px;color:#7f8bb0}
+pre.code .hd .copy{flex:none;border:1px solid rgba(255,255,255,.16);background:transparent;color:#8e99b8;
+  border-radius:6px;font-size:11px;padding:2px 9px;cursor:pointer}
+pre.code .hd .copy:hover{color:#fff;border-color:#fff}
+pre.code code{display:block;overflow-x:auto;padding:12px 16px;font-family:var(--mono)}
+pre.code .ln{display:block;white-space:pre}
+pre.code .ln::before{content:attr(data-n);display:inline-block;width:3.2em;margin-right:14px;text-align:right;
+  color:#414d70;user-select:none;font-size:11.5px}
+/* 语法配色 */
+.tk-kw{color:#c792ea} .tk-str{color:#a5d6a7} .tk-com{color:#5d6b8f;font-style:italic}
+.tk-num{color:#f7b97c} .tk-fn{color:#7fb3ff} .tk-dec{color:#ef9c76} .tk-type{color:#5ed3d3} .tk-op{color:#93a1c4}
+
+/* ===== 表格 ===== */
+.tbl-wrap{overflow-x:auto;margin:14px 0;border:1px solid var(--line-soft);border-radius:12px;box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--panel)}
+th,td{padding:9px 14px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{background:var(--brand-soft);color:var(--brand);font-size:12.5px;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td code, p code, li code{font-family:var(--mono);font-size:12px;background:var(--brand-soft);color:var(--brand);
+  padding:1.5px 6px;border-radius:5px;white-space:nowrap}
+
+/* ===== 图（架构/流程）==== */
+.arch{display:flex;flex-direction:column;gap:8px;margin:16px 0}
+.arch .layer{border:1px solid var(--line);border-radius:11px;background:var(--panel);padding:12px 14px;box-shadow:var(--shadow)}
+.arch .layer .lt{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--ink-faint);text-transform:uppercase;margin-bottom:6px}
+.arch .boxes{display:flex;flex-wrap:wrap;gap:6px}
+.arch .bx{font-size:12px;font-family:var(--mono);background:var(--brand-soft);color:var(--brand);
+  border-radius:7px;padding:3px 9px}
+.arch .bx.g{background:var(--teal-soft);color:var(--teal)} .arch .bx.y{background:var(--amber-soft);color:var(--amber)}
+.arch .arrow{align-self:center;color:var(--ink-faint);font-size:15px;line-height:1;margin:-3px 0}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:14px 0}
+.flow .step{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:6px 12px;font-size:12.5px;box-shadow:var(--shadow)}
+.flow .step b{color:var(--brand);font-family:var(--mono);font-size:11px;display:block;font-weight:600}
+.flow .ar{color:var(--ink-faint)}
+.path{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:8px 0;padding:10px 12px;background:var(--panel);
+  border:1px solid var(--line-soft);border-radius:10px}
+.path .lab{font-size:11.5px;font-weight:700;color:var(--brand);min-width:96px}
+.path .n{font-size:11.5px;font-family:var(--mono);background:var(--brand-soft);color:var(--brand);border-radius:6px;padding:2px 8px}
+.path .n.hl{background:var(--amber-soft);color:var(--amber)}
+.path .a{color:var(--ink-faint);font-size:11px}
+
+/* ===== 自测 ===== */
+details.quiz{border:1px solid var(--line);border-left:3px solid #8b5cf6;border-radius:11px;background:var(--panel);
+  margin:12px 0;box-shadow:var(--shadow)}
+details.quiz summary{cursor:pointer;padding:11px 16px;font-size:13.5px;font-weight:600;color:var(--ink);list-style:none;
+  display:flex;align-items:center;gap:9px}
+details.quiz summary::-webkit-details-marker{display:none}
+details.quiz summary .q{color:#8b5cf6;font-weight:800;font-size:11px;letter-spacing:.08em}
+details.quiz .ans{padding:2px 16px 13px;color:var(--ink-soft);font-size:13.5px;border-top:1px dashed var(--line-soft);margin-top:4px;padding-top:11px}
+
+/* ===== 端到端演示器 ===== */
+.stepper{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin:18px 0;overflow:hidden}
+.stepper .bar{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line-soft)}
+.stepper .bar .cnt{font-family:var(--mono);font-size:12px;color:var(--ink-mute)}
+.stepper .bar .ctrl{margin-left:auto;display:flex;gap:7px}
+.stepper .bar button{border:1px solid var(--line);background:var(--panel);border-radius:8px;width:32px;height:30px;
+  cursor:pointer;color:var(--ink-soft);font-size:14px}
+.stepper .bar button:disabled{opacity:.4;cursor:default}
+.stepper .body{padding:17px 20px 15px;min-height:150px}
+.stepper .stage{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--teal);text-transform:uppercase}
+.stepper .title{font-size:17px;font-weight:700;margin:3px 0 8px}
+.stepper .detail{font-size:14px;color:var(--ink-soft)}
+.stepper .refs{margin-top:11px;font-family:var(--mono);font-size:11.5px;color:var(--ink-faint)}
+.stepper .dots{display:flex;flex-wrap:wrap;gap:5px;padding:0 16px 15px}
+.stepper .dots button{width:22px;height:8px;border-radius:5px;border:none;background:var(--line);cursor:pointer;padding:0}
+.stepper .dots button.on{background:var(--brand)}
+.stepper .dots button.done{background:var(--brand-mid)}
+
+/* ===== 术语表 ===== */
+.gsearch{width:100%;max-width:380px;border:1px solid var(--line);border-radius:10px;background:var(--panel);
+  color:var(--ink);padding:9px 14px;font-size:13.5px;margin:6px 0 12px;outline:none}
+.gsearch:focus{border-color:var(--brand)}
+
+/* ===== 原则卡 ===== */
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:16px 0}
+.pr{background:var(--panel);border:1px solid var(--line-soft);border-radius:12px;padding:15px 17px;box-shadow:var(--shadow)}
+.pr .pn{font-family:var(--mono);font-size:12px;color:var(--brand);font-weight:700}
+.pr .pt{font-weight:700;font-size:14px;margin:3px 0 5px}
+.pr .pd{font-size:12.8px;color:var(--ink-mute);line-height:1.7}
+
+footer{margin-top:70px;padding:26px 0 10px;border-top:1px solid var(--line-soft);color:var(--ink-faint);font-size:12.5px;text-align:center}
+
+/* ===== 响应式 ===== */
+.toc-toggle{display:none}
+@media (max-width:1020px){
+  nav.toc{position:fixed;left:0;top:56px;bottom:0;background:var(--panel);z-index:45;transform:translateX(-105%);
+    transition:transform .22s ease;box-shadow:var(--shadow);width:280px}
+  body.toc-open nav.toc{transform:none}
+  .toc-toggle{display:inline-flex}
+  main{padding:22px 16px 80px}
+  .ch-lead{padding-left:0}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<header class="topbar">
+  <button class="tbtn toc-toggle" id="tocToggle" aria-label="打开目录">☰ 目录</button>
+  <div class="brand"><span class="logo">📖</span> 小说智读 · 源码教程</div>
+  <div class="crumb" id="crumb">第 0 章 · 项目全景</div>
+  <div class="btns">
+    <button class="tbtn" id="themeBtn" title="切换明暗主题">🌙 暗色</button>
+  </div>
+</header>
+
+<div class="layout">
+<nav class="toc" id="toc">
+  <h4>开始</h4>
+  <a href="#cover"><span class="n">00</span>封面与学习指南</a>
+  <h4>主线课程</h4>
+  <a href="#ch0"><span class="n">00</span>项目全景</a>
+  <a href="#ch1"><span class="n">01</span>配置层 settings</a>
+  <a href="#ch2"><span class="n">02</span>数据层 pgvector</a>
+  <a href="#ch3"><span class="n">03</span>索引管线</a>
+  <a href="#ch4"><span class="n">04</span>检索一 · 向量</a>
+  <a href="#ch5"><span class="n">05</span>检索二 · 融合</a>
+  <a href="#ch6"><span class="n">06</span>检索三 · 重排</a>
+  <a href="#ch7"><span class="n">07</span>问句改写与路由</a>
+  <a href="#ch8"><span class="n">08</span>LangGraph 编排</a>
+  <a href="#ch9"><span class="n">09</span>API 与 SSE</a>
+  <a href="#ch10"><span class="n">10</span>前端消费 SSE</a>
+  <a href="#ch11"><span class="n">11</span>记忆闭环</a>
+  <a href="#ch12"><span class="n">12</span>评测体系</a>
+  <h4>收束</h4>
+  <a href="#ch13"><span class="n">13</span>端到端链路演示</a>
+  <a href="#ch14"><span class="n">14</span>术语表</a>
+  <a href="#appendix"><span class="n">A</span>工程原则</a>
+</nav>
+
+<main><div class="page">
+
+<!-- ============ 封面 ============ -->
+<section class="hero" id="cover">
+  <div class="kicker">源码教程 · Source Walkthrough</div>
+  <h1>《小说智读》RAG 问答系统<br><span class="grad">循序渐进 · 读到最后也不掉队</span></h1>
+  <p class="sub">每一章只引入一个新概念：先讲清楚"它是什么、解决什么问题"，再回到真实源码。
+  所有代码片段均注明文件路径与行号（以仓库当前版本为准），核心语句附逐行注释。</p>
+  <div class="chips">
+    <span class="chip">15 个章节</span><span class="chip t">类比先行 · 源码在后</span>
+    <span class="chip t">为什么这样写</span><span class="chip a">坑与注意</span>
+    <span class="chip">端到端演示</span><span class="chip a">可检索术语表</span>
+    <span class="chip">已同步 2026-08-30 重构</span>
+  </div>
+  <a class="start" href="#ch0">开始学习 →</a>
+</section>
+
+<div class="callout concept">
+  <span class="tag">🎓 学习指南</span>
+  <p><strong>推荐节奏</strong>：每章先读"概念卡"和"类比"建立直觉 → 再对照代码块验证理解 →
+  最后做章末自测题。代码块右上角有文件路径与行号，可随时打开仓库对照。</p>
+  <ul>
+    <li>点击左侧目录任意章节可直达；顶部进度条显示全书阅读进度。</li>
+    <li>紫色框 = 新概念引入，青色框 = 为什么这样写，橙色框 = 坑与注意，绿色框 = 本章小结，玫红框 = 真实案例/教训。</li>
+    <li>第 13 章有一个<b>可交互的端到端演示器</b>，把一次提问拆成 17 步逐格播放。</li>
+    <li>本页已按 2026-08-30 重构后的代码全面更新（路径、行号、新增概念），见下方"重构导读"。</li>
+  </ul>
+</div>
+
+<div class="callout concept">
+  <span class="tag">🔄 重构导读 · 2026-08-30</span>
+  <p>这次重构没有改变任何行为语义，改变的是<b>代码的组织方式</b>与一处真实 bug：</p>
+  <ul>
+    <li><b>core/rag.py 拆分为"门面 + retrieval 包"</b>：四路检索通道进 <code>channels.py</code>、融合进 <code>fusion.py</code>、入库进 <code>indexer.py</code>、章节精排与邻居扩展进 <code>context.py</code>；rag.py 保留主管线并 re-export 全部旧符号——所有 <code>from app.core.rag import ...</code> 一行不用改（第 5 章详解）。</li>
+    <li><b>新增 core/visibility.py</b>：多租户可见性的唯一定义点（28 行）。引入"系统租户"——内置《红楼梦》以 system 用户入库，对所有用户只读可见，注册即问（第 4 章详解）。</li>
+    <li><b>memory_service 新增 safe_* 安全包装</b>：吞错降级语义从 chat.py 的 try/except 收敛到 service 层，chat.py 瘦身为"只负责发事件"（第 11 章详解）。</li>
+    <li><b>chat.py 修复 meta 事件 bug</b>：此前 meta 只写日志、未 yield 给 SSE，前端 onMeta 永远收不到（第 9 章详解）；并补了 backend/tests/test_chat_api.py 回归测试。</li>
+    <li><b>前端</b>：系统书自动兜底选中、禁止删除/重索引；接入 eslint 与 vitest（client.test.ts）。</li>
+  </ul>
+</div>
+
+<!-- ============ 第 0 章 ============ -->
+<section class="chapter" id="ch0">
+  <div class="ch-head"><div class="ch-num">00</div><h2>项目全景</h2></div>
+  <p class="ch-lead">它解决什么问题 · 整体架构 · 前置知识。读完本章，后面 12 章其实就是把一张图逐段展开。</p>
+
+  <h3><span class="dot"></span>0.1 它解决什么问题</h3>
+  <p>想象你在读一本几百章的长篇小说，想知道"贾宝玉和林黛玉的关系是怎么变化的"。翻书找答案很痛苦——于是你把这个任务交给 AI 助手。但直接问大语言模型（LLM）有两个致命问题：</p>
+  <ul>
+    <li><strong>模型没读过这本书</strong>——对具体情节要么不知道，要么一本正经地编造（幻觉）；</li>
+    <li><strong>上下文装不下整本书</strong>——100 万字的小说远超模型一次能处理的长度。</li>
+  </ul>
+
+  <div class="callout concept">
+    <span class="tag">💡 新概念 · RAG</span>
+    <p><strong>RAG（Retrieval-Augmented Generation，检索增强生成）</strong>——用<b>开卷考试</b>来类比最贴切：
+    模型不是靠背诵（参数记忆）答题，而是开卷——先从书里<em>检索</em>出最相关的几段原文，再把这几段原文和你的问题一起交给模型，
+    让它<em>只依据这几段</em>作答，并标注引用了哪一段。</p>
+    <p>所以《小说智读》做的事情可以概括成一条流水线：</p>
+    <div class="flow">
+      <span class="step"><b>导入</b>上传小说</span><span class="ar">→</span>
+      <span class="step"><b>索引</b>清洗/按章节切块</span><span class="ar">→</span>
+      <span class="step"><b>入库</b>每块算向量存入 PostgreSQL</span><span class="ar">→</span>
+      <span class="step"><b>检索</b>改写问题 · 混合检索 · 重排 · 补上下文</span><span class="ar">→</span>
+      <span class="step"><b>作答</b>按复杂度路由 Agent 策略</span><span class="ar">→</span>
+      <span class="step"><b>呈现</b>带 [S#] 引用的流式答案</span>
+    </div>
+  </div>
+
+  <h3><span class="dot"></span>0.2 整体架构</h3>
+  <div class="arch">
+    <div class="layer"><div class="lt">浏览器 · Vue3 + Vite</div>
+      <div class="boxes">
+        <span class="bx">chat.vue 页面骨架 / 选书 / 策略切换</span>
+        <span class="bx">ChatPanel.vue 消息流 + 专家过程 + 引用</span>
+        <span class="bx">KnowledgeManager.vue 上传 / 进度</span>
+        <span class="bx">client.ts fetch + 手工解析 SSE</span>
+      </div></div>
+    <div class="arrow">↓ &nbsp;/api/*（Vite proxy 或 nginx 反代）</div>
+    <div class="layer"><div class="lt">FastAPI 后端</div>
+      <div class="boxes">
+        <span class="bx">AuthMiddleware JWT → user_id</span>
+        <span class="bx y">api/knowledge.py 上传 → 后台索引</span>
+        <span class="bx y">api/chat.py SSE 总导演</span>
+        <span class="bx y">api/auth.py 注册 / 登录</span>
+        <span class="bx y">api/memory.py 记忆查看 / 删除</span>
+      </div>
+      <div class="boxes" style="margin-top:6px">
+        <span class="bx g">core/rag.py 检索门面（主管线）</span>
+        <span class="bx g">core/retrieval/ 通道 · 融合 · 入库 · 上下文</span>
+        <span class="bx g">core/visibility.py 租户可见性</span>
+        <span class="bx g">core/rerank.py 重排</span>
+        <span class="bx g">core/query_rewriter.py 改写</span>
+        <span class="bx g">services/ 索引 · 记忆 · 章节发现</span>
+        <span class="bx g">agent/ LangGraph 运行时</span>
+      </div></div>
+    <div class="arrow">↓ SQL（asyncpg）</div>
+    <div class="layer"><div class="lt">PostgreSQL 16 + pgvector + pg_search</div>
+      <div class="boxes">
+        <span class="bx">users</span><span class="bx">knowledge_files</span><span class="bx">embeddings（向量+tsvector）</span>
+        <span class="bx">chat_sessions</span><span class="bx">chat_messages</span><span class="bx">conversation_summaries</span><span class="bx">agent_memories</span>
+      </div></div>
+    <div class="arrow">↓ HTTPS（OpenAI 兼容接口）</div>
+    <div class="layer"><div class="lt">模型服务</div>
+      <div class="boxes"><span class="bx y">LLM（DeepSeek / 通义 / 智谱）</span><span class="bx y">Embedding API / 本地 bge</span></div></div>
+  </div>
+
+  <div class="callout why">
+    <span class="tag">🎯 三个架构决策</span>
+    <ul>
+      <li><strong>向量与业务数据共用一个 PostgreSQL</strong>——不引入独立向量库，一条 SQL 同时做"向量相似 + 用户过滤 + 章节定位"，免去跨库 JOIN 和双写一致性。</li>
+      <li><strong>检索是混合的</strong>——向量擅长"意思相近"，词法擅长"字面命中"（人名、绰号），RRF 融合 + cross-encoder 重排 + 邻居补全。</li>
+      <li><strong>所有问答统一走一个 Agent 图</strong>——简单问题 <code>direct</code> 两步直达；复杂问题 <code>multi_expert</code> 多专家并发。无论哪条路，检索只做一次、证据共享。</li>
+    </ul>
+  </div>
+
+  <h3><span class="dot"></span>0.3 前置知识</h3>
+  <p>本教程会在用到的地方现讲概念，但最好对下面这些有"听说过"级别的了解：</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>领域</th><th>需要的程度</th><th>不熟也没关系，因为</th></tr>
+    <tr><td>Python 基础</td><td>变量、函数、类、装饰器</td><td>教程会解释每个新语法</td></tr>
+    <tr><td>async/await</td><td>知道"异步 = 等待 IO 时让出 CPU"</td><td>第 2/8/9 章结合例子讲</td></tr>
+    <tr><td>SQL 基础</td><td>会写 SELECT…WHERE…ORDER BY…LIMIT</td><td>第 2 章从建表讲起</td></tr>
+    <tr><td>HTTP</td><td>知道请求/响应、header</td><td>第 9 章讲 SSE 时补背景</td></tr>
+    <tr><td>Vue 3</td><td>组件、ref、模板绑定</td><td>第 10 章只讲用到的部分</td></tr>
+    <tr><td>LLM 概念</td><td>知道"模型收文本、吐文本"</td><td>RAG/向量等概念全部现讲</td></tr>
+  </table></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>这是一个"开卷考试"式的小说问答系统。一条主线是<b>把书变成可检索的向量卡片</b>（第 2~3 章），另一条主线是<b>把问题变成带引用的答案</b>（第 4~10 章），外加两翼——记忆（第 11 章）与评测（第 12 章）。下面我们从地基开始。</p></div>
+
+  <details class="quiz"><summary><span class="q">自测 1</span>为什么这个项目不把整本小说一次性塞给模型？</summary>
+    <div class="ans">两个原因：① 上下文窗口装不下整本书（百万字级）；② 即便装得下，长上下文里模型对中间内容的召回率会下降（"lost in the middle"），且 token 成本极高。RAG 的思路是只检索最相关的几段原文，让模型在<b>小而准</b>的证据上作答。</div>
+  </details>
+  <details class="quiz"><summary><span class="q">自测 2</span>"向量检索"和"词法检索"各自擅长什么？</summary>
+    <div class="ans">向量检索按<b>语义相似</b>匹配（"大圣"能匹配"孙悟空"）；词法检索按<b>字面精确</b>匹配（人名、绰号、专名一定能命中）。所以本项目两条腿走路，再用 RRF 融合（第 5 章详解）。</div>
+  </details>
+</section>
+
+<!-- ============ 第 1 章 ============ -->
+<section class="chapter" id="ch1">
+  <div class="ch-head"><div class="ch-num">01</div><h2>配置层：一切从 settings 开始</h2></div>
+  <p class="ch-lead">新概念：环境变量与配置单例。这是全项目唯一的配置出口，模块导入即完成校验。</p>
+
+  <div class="callout analogy"><span class="tag">🧩 类比</span>
+  <p>把程序想象成一间餐厅。菜单（代码逻辑）是固定的，但今天用哪个供应商的食材（API Key）、桌子摆几张（端口）、打烊时间（超时）不该焊死在菜单里，而应贴在后厨的黑板上，随时可换。这块"黑板"就是<b>环境变量</b>，通常写在项目根目录的 <code>.env</code> 文件里。</p></div>
+
+  <h3><span class="dot"></span>1.1 加载 .env 与一个有趣的细节：代理绕行</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/config.py · L17–33"><code>load_dotenv()            # 把 .env 文件的内容读进环境变量，之后 os.getenv 才能读到
+
+_proxy_bypass = (
+    "hf-mirror.com,huggingface.co,...,api.deepseek.com,..."   # 这些域名不走系统代理
+)
+_existing_np = os.environ.get("NO_PROXY") or os.environ.get("no_proxy") or ""
+_merged_np = ",".join(x for x in [_existing_np, _proxy_bypass] if x)
+os.environ["NO_PROXY"] = _merged_np     # 追加而非覆盖，尊重用户已有配置</code></pre>
+  <p>为什么？注释写得很清楚：本地代理（如 Clash）转发 HuggingFace 大文件下载不稳定，而 LLM API 走代理又会"远程计算机拒绝网络连接"。把模型源和 API 域名加入 <code>NO_PROXY</code> 直连，属于<b>在代码里固化环境适配经验</b>——这正是配置层该干的事。</p>
+
+  <h3><span class="dot"></span>1.2 配置类的收口</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/config.py · L39–47 与 L293–307"><code>class Settings:
+    """统一管理所有配置项，通过环境变量注入。"""
+    def __init__(self):
+        self.llm_api_key = os.getenv("LLM_API_KEY", "")          # 大模型 key
+        self.llm_base_url = os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1")
+        self.llm_model = os.getenv("LLM_MODEL", "deepseek-chat")
+        ...
+        self.embed_dim = int(os.getenv("EMBED_DIM", "1536"))     # 向量维度，第 2 章主角
+        ...
+
+    def validate(self):
+        if not self.llm_api_key:
+            raise ValueError("LLM_API_KEY 未配置，请在 .env 中设置")
+        ...
+
+settings = Settings()   # 模块级单例：所有文件都 from app.config import settings</code></pre>
+
+  <p><code>config.py:170-173</code> 还有一处启动即失败（fail-fast）的例子：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/config.py · L170–173"><code>self.novel_chunk_size = max(200, int(os.getenv("NOVEL_CHUNK_SIZE", "650")))     # 每块目标长度
+self.novel_chunk_overlap = max(0, int(os.getenv("NOVEL_CHUNK_OVERLAP", "120"))) # 相邻块重叠
+if self.novel_chunk_overlap >= self.novel_chunk_size:
+    raise ValueError("NOVEL_CHUNK_OVERLAP 必须小于 NOVEL_CHUNK_SIZE")</code></pre>
+
+  <div class="callout why"><span class="tag">🎯 为什么这样写</span>
+  <ul>
+    <li><strong>为什么单例而不是每次 os.getenv？</strong>把"读环境变量 + 类型转换 + 边界钳制 + 校验"集中到一次，其余代码只面对类型安全的属性（<code>settings.embed_dim</code> 一定是 int）。散落的 getenv 会让"字符串 vs 整数""默认值不一致"这类 bug 到处繁殖。</li>
+    <li><strong>为什么在 __init__ 里就 raise？</strong>配置写错属于<b>必然导致后续逻辑错误</b>的问题，越早暴露越好。import 阶段直接崩掉，比运行到第 3000 个 chunk 才出现诡异结果便宜得多。这也是贯穿全项目的原则：<b>能 fail-fast 的地方不静默降级</b>。</li>
+    <li><strong>替代方案：</strong><code>pydantic-settings</code> 可用声明式字段替代手写 __init__，更优雅；本项目手写是为了少一个依赖、且能写自定义钳制逻辑。两者取舍见仁见智。</li>
+  </ul></div>
+
+  <div class="callout warn"><span class="tag">⚠️ 坑与注意</span>
+  <p>改任何 <code>.env</code> 后要重启进程才会生效；<code>EMBED_DIM</code> 改了必须重建向量索引（第 2、3 章解释为什么）。</p></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p><code>settings</code> 是全项目唯一的配置出口，模块导入即完成校验。有了地基，下一步是它指向的数据库。</p></div>
+</section>
+
+<!-- ============ 第 2 章 ============ -->
+<section class="chapter" id="ch2">
+  <div class="ch-head"><div class="ch-num">02</div><h2>数据层：一个库同时存"向量"和"业务数据"</h2></div>
+  <p class="ch-lead">新概念：向量、embedding、pgvector、ORM。全书的主角是一张 embeddings 表。</p>
+
+  <div class="callout concept"><span class="tag">💡 三个术语</span>
+  <ul>
+    <li><strong>embedding（嵌入向量）</strong>：把一段文字变成一串数字，比如 1536 个小数。意思相近的两段文字，向量在 1536 维空间里的"夹角"就小。</li>
+    <li><strong>向量检索</strong>：给一个查询向量，找出库里夹角最小（最相似）的 K 条记录。常用指标是<b>余弦距离</b> = 1 − cos(夹角)，越小越相似。</li>
+    <li><strong>pgvector</strong>：PostgreSQL 的扩展，让普通表多出一列 <code>vector</code> 类型并支持相似度排序。类比：Excel 多了一列"数值数组"，还能按"数组有多像你手里这个"排序。</li>
+  </ul>
+  <p><strong>ORM（对象关系映射）</strong>：用 Python 类表示表、对象表示行，避免手拼 SQL 字符串。本项目用 SQLAlchemy 2.0 的<b>异步</b>版本——等数据库返回时让出 CPU，去处理别的请求。</p></div>
+
+  <h3><span class="dot"></span>2.1 表结构：先看 Embedding，它是全书的主角</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/db/models.py · L33–62"><code>class Embedding(Base):
+    """RAG 向量片段（pgvector）。"""
+    __tablename__ = "embeddings"
+
+    id = Column(String(36), primary_key=True, default=lambda: uuid.uuid4().hex)  # 随机主键
+    content = Column(Text, nullable=False)                     # 小说原文片段
+    embedding = Column(Vector(settings.embed_dim), nullable=False)  # 向量列，维度来自配置
+    source = Column(String(255), nullable=False, index=True)   # 文件名
+    file_id = Column(String(32), index=True)                   # 属于哪本书
+    user_id = Column(String(64), index=True, default="default")# 多租户隔离（第 4 章）
+    domain = Column(String(32), index=True, default="novel")   # 业务域，目前都是 novel
+    chapter = Column(String(255), index=True)                  # 章节标题（引用展示用）
+    chapter_no = Column(Integer, index=True)                   # 章节序号（定位/邻居扩展用）
+    chunk_no = Column(Integer, index=True)                     # 全书片段号（引用 [S#] 用）
+    page = Column(Integer)                                     # PDF 页码
+    meta_json = Column(Text)                                   # 其余元数据兜底
+    # 全文检索向量：PostgreSQL "生成列"，写入时自动由 content 计算并持久化
+    search_vector = Column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', content)", persisted=True),
+    )
+    created_at = Column(DateTime, default=datetime.utcnow)</code></pre>
+  <p><strong>逐行看重点</strong>：<code>id</code> 用 <code>uuid4().hex</code>（分布式友好的随机主键，避免自增 ID 冲突）；
+  <code>embedding</code> 的维度<b>在建模时就固定</b>为 <code>settings.embed_dim</code>——换 embedding 模型必须连配置一起改，否则插入直接报错；
+  <code>search_vector</code> 是<b>生成列</b>，写入时自动由原文计算并落盘（写入慢一点、检索快很多）；
+  <code>chapter_no / chunk_no</code> 两个整数是小说场景的灵魂——第 6 章的"邻居上下文"、答案里的"第 N 章 片段 M"全靠它们。</p>
+
+  <p>其余表一图流：</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>表</th><th>作用</th></tr>
+    <tr><td><code>users</code></td><td>账号（PBKDF2 密码哈希，第 9 章）</td></tr>
+    <tr><td><code>knowledge_files</code></td><td>每本书一条：状态机 pending→indexing→indexed/failed + 租约 + 索引版本指纹</td></tr>
+    <tr><td><code>chat_sessions</code></td><td>会话（绑定 file_id：一场对话只聊一本书）</td></tr>
+    <tr><td><code>chat_messages</code></td><td>消息（sources 列以 JSON 字符串存引用）</td></tr>
+    <tr><td><code>conversation_summaries</code></td><td>会话摘要（第 11 章）</td></tr>
+    <tr><td><code>agent_memories</code></td><td>长期记忆（第 11 章，也有可选向量列）</td></tr>
+  </table></div>
+
+  <h3><span class="dot"></span>2.2 连接与启动初始化</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/db/__init__.py · L29–44"><code>async_engine = create_async_engine(
+    ASYNC_DATABASE_URL,      # postgresql+asyncpg://...，异步驱动
+    pool_pre_ping=True,      # 每次借连接前先 ping 一下，剔除被防火墙掐死的死连接
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,  # 提交后对象属性仍可读；否则一读属性就再发一条 SELECT
+    autoflush=False,         # 不在查询前偷偷把未保存改动刷进库，行为更可预期
+)
+
+Base = declarative_base()
+from app.db import models  # 必须在 Base 之后导入，让所有表注册进 Base.metadata</code></pre>
+  <p>三个参数各挡住一类坑：<code>pool_pre_ping=True</code> 挡长连接被静默回收后的"莫名失败"；
+  <code>expire_on_commit=False</code> 挡异步代码里的隐藏同步 IO 炸弹（默认行为下 commit 后对象"过期"，访问字段触发懒加载）；
+  <code>autoflush=False</code> 挡"我只是查一下"意外写出半成品数据。</p>
+
+  <pre class="code" data-lang="python" data-file="backend/app/db/__init__.py · L53–73（重试部分）"><code>async def init_db(max_retries: int = 30, retry_interval: float = 2.0) -> None:
+    # 1) 重试等待数据库就绪：docker-compose 里后端比 postgres 先起是常态
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with async_engine.connect() as conn:
+                pass
+            break
+        except OperationalError as e:
+            last_err = e
+            if attempt < max_retries:
+                await asyncio.sleep(retry_interval)
+    else:
+        raise last_err                       # for-else：循环没 break 说明 30 次全失败</code></pre>
+  <p><code>for...else</code> 是 Python 小众但好用的语法：<code>else</code> 在循环<b>没有被 break</b> 时执行，正好表达"重试耗尽"。</p>
+
+  <pre class="code" data-lang="python" data-file="backend/app/db/__init__.py · L90–107（维度守卫）"><code>    # 3) 建表 + 维度守卫
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)      # 建缺失的表（不动已有表）
+        dimension_result = await conn.execute(text("""
+            SELECT a.atttypmod FROM pg_attribute ...        # 查 embeddings.embedding 的实际维度
+        """))
+        actual_dimension = dimension_result.scalar_one_or_none()
+        if actual_dimension is not None and int(actual_dimension) != settings.embed_dim:
+            raise RuntimeError(                             # 配置与库不一致 → 启动即失败
+                f"embeddings.embedding 当前为 {actual_dimension} 维，"
+                f"运行配置要求 {settings.embed_dim} 维；请先执行向量维度迁移。"
+            )</code></pre>
+
+  <pre class="code" data-lang="python" data-file="backend/app/db/__init__.py · L207–226（两类索引）"><code>await conn.execute(text(
+    "CREATE INDEX IF NOT EXISTS embeddings_embedding_idx "
+    "ON embeddings USING hnsw (embedding vector_cosine_ops)"   # 向量近似检索索引
+))
+await conn.execute(text(
+    "CREATE INDEX IF NOT EXISTS embeddings_search_vector_idx "
+    "ON embeddings USING gin (search_vector)"                  # 全文检索倒排索引
+))</code></pre>
+  <p><strong>HNSW</strong>（分层可导航小世界图）是向量检索的近似索引：牺牲一点点召回率，换几十上百倍的检索速度——不建它，每次检索都要和全表逐条算余弦。<strong>GIN</strong> 是倒排索引，服务 <code>search_vector</code> 的 <code>@@</code> 匹配（第 5 章用到）。</p>
+
+  <div class="callout why"><span class="tag">🎯 为什么这样写</span>
+  <ul>
+    <li><strong>为什么单库而不是"PostgreSQL 存业务 + 独立向量库"？</strong>检索时必须带 <code>user_id / domain / file_id</code> 过滤（第 4 章）。单库里这是 WHERE 条件；跨库就要"各自查一批再内存拼接"，既慢又有租户泄露风险。当前规模单库够用，等数据量真撑爆再拆。</li>
+    <li><strong>为什么 init_db 写一堆 ADD COLUMN IF NOT EXISTS？</strong><code>create_all</code> 只建缺失的<b>表</b>，不给已有表<b>加列</b>。这些语句让老库无痛升级（幂等）；正式环境用 Alembic 管理结构版本。</li>
+    <li><strong>替代写法：</strong>去掉维度守卫、让 pgvector 插错时自己报错也可以——但那个报错发生在"用户上传完一本书、跑了几分钟 embedding 之后"，而守卫在<b>启动 3 秒内</b>就告诉你配置错了。</li>
+  </ul></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>一张 embeddings 表装下了原文、向量、章节定位和多租户字段；引擎层三个参数挡住连接池/懒加载/隐式 flush 三类坑；启动逻辑全部幂等且 fail-fast。书和库都有了，下一章把书"装"进库里。</p></div>
+
+  <details class="quiz"><summary><span class="q">自测 1</span>为什么 embedding 维度要在建表时写死？</summary>
+    <div class="ans">维度是列类型的一部分（<code>vector(1536)</code>）。写死换来强约束：换了不同维度的 embedding 模型时，插入阶段就会报错，而不是让两种口径的向量混在同一列里静默污染检索结果。配合启动时的维度守卫，配置错误在 3 秒内暴露。</div>
+  </details>
+  <details class="quiz"><summary><span class="q">自测 2</span>pool_pre_ping / expire_on_commit / autoflush 各挡住什么坑？</summary>
+    <div class="ans">① pool_pre_ping：长连接被数据库/防火墙静默回收后第一条查询莫名失败；② expire_on_commit=False：默认 commit 后对象过期、访问属性触发懒加载——在异步代码里是隐藏的同步 IO；③ autoflush=False：查询前自动 flush 会让"只读"操作意外写库。</div>
+  </details>
+</section>
+
+<!-- ============ 第 3 章 ============ -->
+<section class="chapter" id="ch3">
+  <div class="ch-head"><div class="ch-num">03</div><h2>索引管线：把一本书切成"可检索的卡片"</h2></div>
+  <p class="ch-lead">新概念：Document、分块、状态机与租约。上传即返回，索引在后台跑。</p>
+
+  <div class="callout concept"><span class="tag">💡 三个概念</span>
+  <ul>
+    <li><strong>Document</strong>：LangChain 的标准结构，两个字段——<code>page_content</code>（正文）和 <code>metadata</code>（字典）。一本小说会被拆成上千个 Document，每个带"第几章、第几段"的元数据。</li>
+    <li><strong>分块（chunking）</strong>：把长文切成几百字的块，每块独立算向量。块太大→检索不精准；块太小→上下文断裂。</li>
+    <li><strong>状态机</strong>：一本书从上传到可检索经过多个阶段，用数据库的 status 字段记录，每次只允许合法迁移（pending→indexing→indexed/failed）。</li>
+  </ul></div>
+
+  <h3><span class="dot"></span>3.1 上传入口：立即返回，索引交给后台</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/api/knowledge.py · L22–65（有删节）"><code>@router.post("/kb/upload")
+async def upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:                 # 1) 扩展名白名单
+        raise HTTPException(status_code=400, ...)
+    content = await file.read()                       # 2) 整体读入（上限 10MB）
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, ...)
+    info = await kb_service.create_pending_file(filename, content)  # 3) 落盘 + 建记录
+    metrics.incr("kb_uploads")
+    # 4) 关键：索引丢给响应结束后的后台任务，接口立刻返回
+    background_tasks.add_task(kb_service.run_indexing, info["id"], filename, ext, get_current_user())
+    return {"code": 0, "data": info}                  # 前端拿到 file_id，靠轮询看进度</code></pre>
+  <p>为什么用后台任务？整本书的清洗 + 调 embedding API 可能要几分钟，HTTP 请求挂几分钟必超时。"落盘 + 建 pending 记录 + 秒回"是标准的异步任务模式，前端按 <code>file_id</code> 轮询看进度。</p>
+
+  <h3><span class="dot"></span>3.2 文本解码：给每种候选编码打分</h3>
+  <p>TXT 小说最常见的坑是编码：同一文件可能是 UTF-8、GB18030、GBK、Big5。解法是"全部试一遍，谁最像中文小说谁赢"：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/services/kb_service.py · L56–66"><code>def _decode_quality(text: str, encoding: str) -> float:
+    """给解码结果打分：中文多加分，乱码符号重罚。"""
+    cjk = sum("\u3400" <= char <= "\u9fff" for char in text)      # 中文字符数
+    common = sum(char in "的一是在不了有和人这中大为上个国..." for char in text)  # 高频字加权
+    private_use = sum("\ue000" <= char <= "\uf8ff" for char in text)  # 私有区≈乱码
+    replacement = text.count("\ufffd")                            # 替换符≈解码失败
+    ...
+    utf_bonus = 8 if encoding.startswith("utf-8") else 0          # 同分时偏向 UTF-8
+    return cjk + common * 2 + utf_bonus - private_use * 8 - kana * 4 - replacement * 20 - controls * 10</code></pre>
+  <p>替代方案是 <code>chardet</code> 这类统计探测库，但它偶尔给出"自信的错误答案"且多一个依赖；这个打分器只服务"中文小说"这一种文本，40 行代码、完全可控、错了也知道为什么错。</p>
+
+  <h3><span class="dot"></span>3.3 清洗与章节感知切分</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/services/novel_service.py · L61–78"><code>def clean_novel_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text or "")   # 全角→半角、兼容字符归一
+    text = _INVISIBLE_RE.sub("", text).replace("\u00a0", " ")  # 零宽字符、不间断空格
+    text = text.replace("\r\n", "\n").replace("\r", "\n")      # Windows/Mac 换行统一
+    text = _CONTROL_RE.sub("", text)                   # 控制字符剔除
+    lines = [_MULTI_SPACE_RE.sub(" ", line).strip() for line in text.split("\n")]
+    ...                                                # 连续空行压成一个，保留段落边界</code></pre>
+  <p>注意<b>保留</b>了换行和空行——它们是后面识别"整行章节标题"的依据，不能像普通空白一样压掉。</p>
+
+  <pre class="code" data-lang="python" data-file="backend/app/services/novel_service.py · L165–170"><code>splitter = RecursiveCharacterTextSplitter(
+    chunk_size=settings.novel_chunk_size,        # 目标 650 字
+    chunk_overlap=settings.novel_chunk_overlap,  # 相邻块重叠 120 字，防止句子被切断丢失语义
+    separators=["\n\n", "\n", "。", "！", "？", "；", "，", " ", ""],  # 优先按段落切，实在不行按句/字
+    add_start_index=True,                        # 在 metadata 记录块在原文中的起始偏移
+)</code></pre>
+  <p>"Recursive"的含义：先试最重要的分隔符 <code>\n\n</code>（段落），切出来的还超长就降级用换行符，再不行用句号、逗号……像剥洋葱一样层层细化。这比"每 500 字硬切"好得多——绝不把一句话腰斩。</p>
+
+  <p>章节识别是<b>三级策略</b>：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/services/novel_service.py · L189–202"><code>strict_count = sum(len(items) for items in strict_by_doc)   # 整行标题命中数
+if strict_count:
+    parser_mode = "strict"                                   # ① 整行就是标题（最可靠）
+else:
+    fallback_by_doc = [_find_inline_headings(text) for text, _, _ in prepared]
+    if fallback_count >= 2:
+        parser_mode = "inline_fallback"                      # ② 正文段首出现"第N章"（保守回退）
+    else:
+        parser_mode = "none"                                 # ③ 放弃，全部归入"未分章"</code></pre>
+
+  <p>每个块的元数据就是第 2 章 Embedding 表那些列的来源：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/services/novel_service.py · L243–256"><code>doc.metadata.update({
+    "domain": "novel",
+    "source": filename,          # 文件名 → embeddings.source
+    "file_id": file_id,          # → embeddings.file_id
+    "chapter": chapter,          # 章节标题 → chapter
+    "chapter_no": chapter_no,    # 章节序号 → chapter_no
+    "chunk_no": chunk_no,        # 全书递增片段号 → chunk_no
+    "chapter_chunk_no": chapter_chunk_counts[counter_key],  # 章节内片段号
+    "char_start": char_start,    # 字符区间，TXT 没有"页"就用它定位
+    "char_end": char_start + len(doc.page_content),
+    ...
+})</code></pre>
+  <p>另有第三级兜底：手动重新索引时若确定性解析质量不达标，会把候选行交给 LLM 产出固定格式的章节规则 DSL，程序验证通过才应用（<code>services/chapter_detection.py</code>），规则按"原文哈希 + 解析器版本 + 模型 + Prompt 版本"缓存。<b>模型永远不直接改数据</b>——它只提建议，代码做裁判。</p>
+
+  <h3><span class="dot"></span>3.4 原子替换与索引状态机</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/indexer.py · L69–90"><code>async def add_documents(chunks, user_id=None):
+    """首次入库：算向量 + 追加。"""
+    vectors = await _embed_documents_batched(chunks)      # 分批算，控内存峰值
+    async with AsyncSessionLocal() as session:
+        session.add_all(_rows_for_documents(chunks, vectors, owner))
+        await session.commit()
+
+async def replace_documents(file_id, chunks, user_id=None):
+    """重建索引：新向量全部生成成功后，单个事务里"删旧+插新"。"""
+    vectors = await _embed_documents_batched(chunks) if chunks else []
+    rows = _rows_for_documents(chunks, vectors, owner)    # 注意：先在内存备好全部行
+    async with AsyncSessionLocal() as session:
+        async with session.begin():                       # 一个事务
+            await session.execute(delete(Embedding).where(Embedding.file_id == file_id, ...))
+            session.add_all(rows)                         # 成功一起提交，失败一起回滚</code></pre>
+  <div class="callout why"><span class="tag">🎯 为什么要特意做 replace_documents</span>
+  <p>重新索引（换 embedding 模型/分块参数）如果"边删边插"，中途失败用户就丢了整本书的索引。<b>先在内存备齐所有向量，再一个事务原子替换</b>——失败时旧索引完好，用户最多得到一条警告，不会失去服务。</p></div>
+
+  <p>外层 <code>run_indexing</code> 是完整的后台状态机（骨架）：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/services/kb_service.py · L340–494（骨架）"><code>async def run_indexing(file_id, filename, ext, user_id=None, use_llm_chapter_detection=False):
+    lease_id = uuid.uuid4().hex                          # 本轮任务的"工作证"
+    ...
+    # 拿租约：防止两个进程同时索引同一本书
+    record.status = "indexing"
+    record.attempts = (record.attempts or 0) + 1         # 重试计数
+    record.lease_id = lease_id
+    record.lease_until = now + timedelta(seconds=LEASE_SECONDS)   # 15 分钟租约
+    await session.commit()
+    ...
+    try:
+        loaded = await asyncio.to_thread(_load_novel, ...)      # CPU/IO 密集 → 线程池
+        split_result = await asyncio.to_thread(split_novel_documents, ...)
+        ...
+        await replace_documents(file_id, split_result.documents, user_id=owner)
+    except Exception as exc:
+        failure = _format_index_error(exc, save_path)    # 提取根因，写库展示
+    # 收尾：租约匹配才允许写结果（旧任务不能覆盖新任务的状态）
+    if not record or record.lease_id != lease_id:
+        return
+    if split_result is not None and failure is None:
+        record.status = "indexed"                        # 成功
+    elif previous_chunks:
+        record.status = "indexed"                        # 重建失败但旧索引还在 → 继续可用
+        record.index_warning = "索引失败，旧索引仍可使用"
+    else:
+        record.status = "failed"                         # 从未成功过 → 真失败</code></pre>
+  <div class="callout analogy"><span class="tag">🧩 类比 · 租约（lease）</span>
+  <p>图书馆的讨论室预订。拿到 15 分钟预订条（lease_id + lease_until）才能用房间；超时未续，管理员（<code>recover_stale_indexing</code>，进程重启时调用）回收并重新派任务。每个进度写回函数都会重新核对 lease_id，保证崩溃恢复的旧任务不会覆盖新一轮任务的进度。</p></div>
+
+  <div class="callout warn"><span class="tag">⚠️ 坑与注意</span>
+  <ul>
+    <li>后台任务最怕"无限失败循环"：<code>attempts</code> 上限 3 次 + 旧索引降级保护，让最坏结果可控。</li>
+    <li>改了 <code>NOVEL_CHUNK_SIZE</code> 或 <code>EMBEDDING_MODEL</code> 后旧文件不会自动重索引。检索前有版本守卫（<code>core/rag.py:72-95</code> 的 <code>_check_index_compatibility</code>）：发现文件记录的模型/维度/分块参数与当前配置不一致，直接抛错提示"请重新索引"，而不是拿两种口径混着算分。</li>
+    <li>书库列表 <code>list_files</code>（kb_service.py:589-597）现在返回"自己的 + 系统默认书"，每条带 <code>is_system</code> 标记；前端据此对系统书隐藏删除/重索引按钮——内置书人人可见，但只有 system 租户能写。</li>
+  </ul></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>上传即返回；后台状态机负责"读文件 → 清洗 → 找章节 → 细切块 → 算向量 → 原子替换"；租约和重试上限保证失败可控。下一章开始用这些卡片回答问题——先从最直观的向量检索说起。</p></div>
+
+  <details class="quiz"><summary><span class="q">自测</span>为什么向量重建要"先备齐再一个事务替换"，而不是边删边插？</summary>
+    <div class="ans">边删边插时，embedding 调用在中途失败（网络/余额/超时）会让这本书处于"删了一半"的状态，检索质量悄悄劣化甚至不可用。原子替换保证：要么全新索引生效，要么旧索引原封不动——用户最多看到一条警告，服务永不中断。</div>
+  </details>
+</section>
+
+<!-- ============ 第 4 章 ============ -->
+<section class="chapter" id="ch4">
+  <div class="ch-head"><div class="ch-num">04</div><h2>检索（一）：向量通道与多租户隔离</h2></div>
+  <p class="ch-lead">新概念：Top-K 检索与"当前用户"上下文（ContextVar）。检索的第一步之前，先解决"每个 SQL 都要知道现在是谁在问"。</p>
+
+  <div class="callout analogy"><span class="tag">🧩 类比 · ContextVar</span>
+  <p>餐厅服务员（请求）带着一张写有桌号的点单卡在厨房里流转。厨师（业务函数）不需要服务员每喊一句菜名都重复桌号——看一眼手里的卡就行。这张卡就是 <code>contextvars.ContextVar</code>：每个异步请求有自己独立的副本，互不串。</p></div>
+
+  <pre class="code" data-lang="python" data-file="backend/app/core/context.py · L15–30"><code>_current_user: ContextVar[str] = ContextVar("current_user", default=settings.default_user)
+
+def get_current_user() -> str:        # 业务代码随处调用
+    return _current_user.get()
+
+def set_current_user(user_id: str):   # 鉴权中间件在请求入口调用（第 9 章）
+    return _current_user.set(user_id)
+
+def reset_current_user(token) -> None:
+    _current_user.reset(token)</code></pre>
+  <div class="callout why"><span class="tag">🎯 为什么不用函数参数一路传 user_id？</span>
+  <p>rag.py、kb_service 里各几十个函数，若每个签名都加 user_id，任何一处漏传都是租户泄露事故。ContextVar 让"谁在请求"成为隐式环境的一部分，写错的地方反而更少。（代价：隐式依赖可读性差一点，所以文件 docstring 里专门写了约定。）</p></div>
+
+  <h3><span class="dot"></span>4.1 两级可见性：自己的书 + 系统默认书（2026-08-30 新增）</h3>
+  <div class="callout concept"><span class="tag">💡 新概念 · 系统租户</span>
+  <p>重构后引入了"系统租户"：内置默认小说《红楼梦》以 <code>system</code> 用户身份入库，<b>对所有普通用户只读可见</b>——你一注册就能直接问《红楼梦》，也可以再上传自己的书。于是"谁能看见这行数据"从单选（自己）变成了集合（自己 + system）。这个规则被收敛到全项目<b>唯一定义点</b> <code>core/visibility.py</code>（全文仅 28 行）：</p></div>
+  <pre class="code" data-lang="python" data-file="backend/app/core/visibility.py · L19–28"><code>def visible_users(user_id: str) -> list[str]:
+    """返回 user_id 可见的数据租户列表；system 租户本身不重复叠加。"""
+    if user_id == settings.system_user:
+        return [user_id]                     # system 自己只看自己
+    return [user_id, settings.system_user]   # 普通用户：自己 + 系统租户
+
+def visible_user_filter(column: Any, user_id: str) -> ColumnElement:
+    """生成 `column IN 可见租户` 的 SQLAlchemy 过滤条件。"""
+    return column.in_(visible_users(user_id))</code></pre>
+  <div class="callout why"><span class="tag">🎯 为什么这样设计</span>
+  <ul>
+    <li><b>为什么检索要混入系统租户？</b>内置书必须开箱可问。检索候选池 = 自己的书 + 系统书，而<b>跨书混入由调用方的 file_id 过滤挡住</b>——选书检索时 file_id 必传，系统行只在该书被选中时进入，不会污染别的书。</li>
+    <li><b>为什么删除/重建刻意不用本模块？</b>docstring 写明：删除/重建保持 owner 等值过滤——你永远删不掉系统书，系统书对所有普通用户<b>只读</b>。"可见"（读）和"所有"（写）是两个不同的概念，混用一个过滤条件就是越权事故。</li>
+    <li><b>为什么提供两个函数？</b><code>_bm25_search</code> 用 <code>text()</code> 原生 SQL，拿不到 SQLAlchemy 表达式；所以 visibility.py 同时提供 <code>visible_user_filter()</code>（表达式，ORM 查询用）和 <code>visible_users()</code>（列表，裸 SQL 手工拼 IN 占位符用）——<b>规则只有一份，两种执行世界各自取用</b>。</li>
+  </ul></div>
+
+  <h3><span class="dot"></span>4.2 向量检索本体</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/channels.py · L60–69"><code>async def _vector_search(session, qvec, k, filter_source=None, filter_user=None,
+                         filter_domain=None, filter_file_id=None):
+    """执行 pgvector 余弦距离检索并返回原始相似度。"""
+    distance = Embedding.embedding.cosine_distance(qvec)   # 生成 <=> 距离表达式
+    stmt = select(Embedding, distance.label("distance")).order_by(distance)  # 距离升序=最相似在前
+    stmt = _apply_filters(stmt, filter_source, filter_user, filter_domain, filter_file_id)
+    ...                                                    # 追加 WHERE 条件
+    result = await session.execute(stmt.limit(k))          # 只要 Top-K
+    # 距离转相似度：score = 1 - distance，负值钳到 0
+    return [(row, max(0.0, 1.0 - float(distance_value))) for row, distance_value in result.all()]</code></pre>
+
+  <p>翻译成 SQL 大致是：</p>
+  <pre class="code" data-lang="sql" data-file="等价 SQL"><code>SELECT *, embedding <=> :query_vector AS distance
+FROM embeddings
+WHERE user_id IN (:owner, :system_user)   -- 自己 + 系统默认书；跨书混入由 file_id 过滤挡住
+  AND domain = 'novel' AND file_id = :file_id
+ORDER BY distance
+LIMIT :k;</code></pre>
+
+  <p><code>_apply_filters</code>（core/retrieval/channels.py:45-57）是四个检索通道共用的过滤装配器——<b>向量/FTS/中文词法/BM25 全部强制过它</b>，这就是"行级租户隔离"的落地点。用户条件如今经由 <code>visible_user_filter</code> 表达"自己 + 系统租户"（channels.py:50-52）。</p>
+
+  <div class="callout why"><span class="tag">🎯 为什么这样写</span>
+  <ul>
+    <li><strong>为什么 score = 1 − distance 还要 max(0.0, …)？</strong>余弦距离范围是 [0, 2]（夹角可大于 90°），完全相反的向量距离为 2，1−2=−1。分数统一钳到 [0,1]，后续融合（第 5 章）才不会出现负分捣乱。</li>
+    <li><strong>为什么手写 SQL 而不用 LangChain 自带的 PGVectorRetriever？</strong>自带封装难以塞进 user_id/domain/file_id 过滤和 HNSW 调优，而本项目恰恰需要"同一条 SQL 里做向量 + 多条件过滤"。自己写 10 行换来完全控制权（rag.py:836-847 保留了一个 LangChain 接口的薄壳）。</li>
+    <li><strong>性能：</strong><code>ORDER BY distance LIMIT k</code> 走的正是第 2 章建的 HNSW 索引；没有索引时这条语句是全表扫描。</li>
+    <li><strong>系统书会污染检索结果吗？</strong>不会——file_id 过滤是硬边界：只有当前选中那本书的行才进入候选。visibility.py 的 docstring 把这条写成了模块契约："跨书混入由调用方的 file_id 过滤挡住"。</li>
+  </ul></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>向量通道 = "问题向量化 → 单条 SQL（相似度排序 + 租户过滤 + Top-K）"；两级可见性（自己 + 系统租户）收敛到 28 行的 visibility.py。但向量检索有个天生短板——它按"意思"找，人名、绰号这种<b>字面精确匹配</b>反而是弱项。下一章请出词法通道补位。</p></div>
+</section>
+
+<!-- ============ 第 5 章 ============ -->
+<section class="chapter" id="ch5">
+  <div class="ch-head"><div class="ch-num">05</div><h2>检索（二）：词法通道与两路融合</h2></div>
+  <p class="ch-lead">新概念：词法检索、BM25、RRF 融合、min-max 归一。按"字面"而非"意思"找。</p>
+
+  <div class="callout analogy"><span class="tag">🧩 类比</span>
+  <p>向量检索像"听起来像什么就找什么"（"大圣"能匹配"孙悟空"）；词法检索像 Ctrl+F——字面不出现就找不到，但命中的一定含那个词。向量会漏"冷门绰号的精确所指"，词法会漏"同义改写"，所以要两条腿走路。</p></div>
+
+  <div class="tbl-wrap"><table>
+    <tr><th>通道</th><th>原理</th><th>状态</th></tr>
+    <tr><td><code>_fts_search</code></td><td>内置全文检索（tsvector 生成列 + GIN 索引）</td><td>永远的兜底</td></tr>
+    <tr><td><code>_chinese_lexical_search</code></td><td>jieba 分词 + ILIKE 词覆盖 + trigram 相似度</td><td>可配置开启</td></tr>
+    <tr><td><code>_bm25_search</code></td><td>ParadeDB pg_search 扩展，真 BM25 打分</td><td><b>默认开启，fail-fast</b></td></tr>
+  </table></div>
+
+  <div class="callout concept"><span class="tag">🔄 重构后的位置</span>
+  <p>这些通道函数原本都挤在一个 860 行的 <code>rag.py</code> 里；2026-08-30 重构后拆到
+  <code>core/retrieval/channels.py</code>（四路通道）与 <code>core/retrieval/fusion.py</code>（两种融合器），
+  <code>rag.py</code> 退居"门面"（facade）：保留主检索管线 <code>_similarity_search_once</code>，
+  并 re-export 全部旧符号——业务代码的 <code>from app.core.rag import ...</code> 一行不用改。
+  拆的是文件，不是语义；这就是"门面保兼容"。</p></div>
+
+  <h3><span class="dot"></span>5.1 中文词法的关键：先分词</h3>
+  <p>中文没有空格，<code>to_tsvector('simple', ...)</code> 只会把整句当成一个大 token，什么都匹配不上。<code>_tokenize_chinese_query</code> 负责把问题拆成词：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/channels.py · L85–111"><code>def _tokenize_chinese_query(query: str, max_terms=None) -> list[str]:
+    limit = max_terms or settings.chinese_lexical_max_terms     # 最多取 8 个词
+    anchor_text = query
+    for phrase in sorted(_CHINESE_STOPWORDS, key=len, reverse=True):  # 先去掉"什么/为什么/人物"等
+        anchor_text = anchor_text.replace(phrase, " ")
+    anchor_text = re.sub(r"[和与及跟的在对把将由从向于、，。！？；：\s]+", " ", anchor_text)
+    anchors = re.findall(r"[\u3400-\u9fff]{2,6}|[A-Za-z0-9_]{2,}", anchor_text)  # 正则兜底词
+    try:
+        import jieba
+        candidates = anchors + jieba.lcut(query, cut_all=False)  # jieba 精确模式分词
+    except ImportError:
+        candidates = anchors + _FALLBACK_TOKEN_RE.findall(query) # 没 jieba 也不崩
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for raw in candidates:
+        token = raw.strip().lower()
+        if len(token) < 2 or token in _CHINESE_STOPWORDS or token in seen:
+            continue                       # 过滤单字、停用词、重复
+        ...
+        tokens.append(token)
+        if len(tokens) >= limit:
+            break
+    return tokens</code></pre>
+  <p>细节值得学：<code>anchors</code>（正则切的 2~6 字片段）和 jieba 结果<b>取并集</b>——jieba 偶尔会把人名"林黛玉"切成"林/黛玉"，正则片段保证人名完整形态也在候选里。</p>
+
+  <h3><span class="dot"></span>5.2 三条通道的实现要点</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/channels.py · L72–82（FTS 兜底）"><code>tsquery = func.plainto_tsquery("simple", query)              # 问题 → 查询词袋
+rank = func.ts_rank(Embedding.search_vector, tsquery)        # 词袋命中打分
+stmt = select(Embedding, rank.label("rank")).where(
+    Embedding.search_vector.op("@@")(tsquery)                # @@ 是 tsvector 匹配运算符
+)
+...
+return [(row, min(1.0, float(rank_value) / 0.1)) for row, rank_value in result.all()]</code></pre>
+
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/channels.py · L114–135（中文词法核心）"><code>for token in tokens:
+    condition = Embedding.content.ilike(f"%{escaped}%", escape="\\")  # 内容包含该词？
+    conditions.append(condition)
+    coverage_parts.append(case((condition, 1.0), else_=0.0))          # 命中记 1 分
+coverage = sum(coverage_parts) / float(len(tokens))                   # 命中比例，如 3/5=0.6
+trigram = func.least(1.0, func.word_similarity(query, Embedding.content))
+rank = coverage * 0.85 + trigram * 0.15          # 覆盖为主，字符三元组相似为辅</code></pre>
+
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/channels.py · L141–145 与 L159–181（BM25）"><code>_BM25_SCORE_SQL = "paradedb.score(embeddings.id)"
+
+def _tokenize_for_bm25(query: str) -> str:
+    """BM25 查询侧必须与索引 tokenizer 对齐：中文整句无空格，默认 parse 会把它当成
+    一个超长 token 而无法命中 ngram 索引（spike 实测 0 命中）。复用 jieba 分词空格连接。"""
+    tokens = _tokenize_chinese_query(query)
+    return " ".join(tokens) if tokens else query
+
+...
+    conditions = ["embeddings.content @@@ :bm25_query"]
+    if filter_user:
+        # 与 _apply_filters 对齐：候选池额外包含系统租户（内置默认小说）。
+        users = visible_users(filter_user)                     # 裸 SQL 拿不到表达式 → 取租户列表
+        placeholders = ", ".join(f":visible_user_{index}" for index in range(len(users)))
+        conditions.append(f"embeddings.user_id IN ({placeholders})")
+        for index, user in enumerate(users):
+            params[f"visible_user_{index}"] = user
+    ...
+    stmt = sql_text(
+        f"SELECT embeddings.*, paradedb.score(embeddings.id) AS bm25_score "
+        f"FROM embeddings WHERE {' AND '.join(conditions)} "
+        f"ORDER BY bm25_score DESC LIMIT :k"
+    )</code></pre>
+  <p>注意 BM25 里的租户过滤是<b>手工拼的 IN 占位符</b>而非 <code>visible_user_filter</code>——因为 <code>text()</code> 原生 SQL 里没有 SQLAlchemy 列对象可用。这正是 visibility.py 同时提供"表达式"和"列表"两个入口的原因：规则一份，两种执行世界各自取用（第 4 章）。BM25 是信息检索的经典算法：词频越高、词越稀有、文档越短，分越高——比"数命中词个数"聪明得多。（<code>docker-compose.yml:3-6</code> 注释记录了 spike 实测：候选召回 0.575 &gt; ILIKE 0.525，延迟好约 90 倍，因此换用 ParadeDB 镜像。）</p>
+
+  <h3><span class="dot"></span>5.3 两路怎么合并：RRF 与 weighted</h3>
+  <div class="callout concept"><span class="tag">💡 新概念 · RRF</span>
+  <p>两通道分数<b>量纲不同</b>（余弦相似 vs BM25 无上限分），直接相加没有意义。RRF（Reciprocal Rank Fusion，倒数排名融合）的思路：<b>只看名次，不看分数</b>。每个候选的融合分 = 各通道 1/(60+名次) 之和。</p></div>
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/fusion.py · L12–22"><code>def _rrf_fuse(vector_results, lexical_results, k, rrf_c: int = 60):
+    """用 Reciprocal Rank Fusion 合并向量和词法候选。"""
+    scores: dict[str, float] = {}
+    for results in (vector_results, lexical_results):
+        for rank_index, (row, _) in enumerate(results):      # rank_index 从 0 开始
+            scores[row.id] = scores.get(row.id, 0.0) + 1.0 / (rrf_c + rank_index + 1)
+            # 向量第 1 名贡献 1/61，第 2 名 1/62…… 名次越靠前贡献越大
+    fused.sort(key=lambda item: item[1], reverse=True)
+    return fused[:k]</code></pre>
+  <p>RRF 的妙处：1/(60+rank) 曲线非常平缓，某通道第 1 名和第 2 名的差距被压缩，<b>两通道都靠前的候选稳赢，单通道的"爆款"不能一票定音</b>。常数 60 是论文经验值，越大排名差距越平滑。</p>
+
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/fusion.py · L36–57（weighted：先归一再加权）"><code>def _weighted_fuse(vector_results, lexical_results, vector_weight, lexical_weight):
+    """各通道原始分数池内 min-max 归一后加权求和。
+
+    RRF 只用名次，会丢弃"两通道都把某候选排第 1"和"险排第 N"的差距；
+    评测已定位瓶颈在池内排序，此模式让通道相关度参与排序。
+    单通道候选在缺失通道计 0 分——被双通道同时召回的候选天然占优。
+    """
+    norm_vector = _minmax_normalize(vector_scores)     # 池内线性映射到 [0,1]
+    norm_lexical = _minmax_normalize(lexical_scores)
+    fused = [
+        (row, vector_weight * norm_vector.get(row_id, 0.0) + lexical_weight * norm_lexical.get(row_id, 0.0))
+        for row_id, row in rows_by_id.items()
+    ]</code></pre>
+  <p>两种模式由 <code>FUSION_MODE</code> 配置切换（config.py:104-106），是典型的 <b>A/B 开关</b>设计：新策略先实现、默认关闭，评测证明收益后再切默认值。</p>
+
+  <h3><span class="dot"></span>5.4 串联：rag.py 门面里的主流程与两种失败策略</h3>
+  <p><code>_similarity_search_once</code> 是重构后留在 <code>rag.py</code> 的主检索管线（rag.py:131-323），四路通道与融合器都是它的"零件"：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/core/rag.py · L131–323（摘 L166–261）"><code>pool_n = (max(k, settings.reranker_candidate_n) if settings.enable_reranker
+          else max(k, settings.hybrid_candidate_k) if settings.enable_hybrid_search else k)
+# 先取足够大的候选池，留给去重/重排/扩展用，而不是一开始就砍到 Top-K
+
+if settings.enable_hybrid_search:
+    vector_results = await _vector_search(session, qvec, candidate_k, ...)   # 通道一
+    if settings.enable_bm25_search and _CJK_RE.search(query):
+        # fail-fast：BM25 开启即视为该环境已具备 pg_search 扩展 + bm25 索引。
+        # 异常直接抛出，不静默降级——缺扩展/索引是必须修复的配置错误，
+        # 静默回退会让词法通道悄悄退化且无人察觉。
+        lexical_results = await _bm25_search(session, query, candidate_k, ...)
+    else:
+        try:
+            ..._chinese_lexical_search(...) / ..._fts_search(...)
+        except Exception as exc:                     # pg_trgm 不可用 → 回退 simple FTS
+            await session.rollback()
+            log.warning("lexical_search.fallback", error=str(exc))
+            lexical_results = await _fts_search(...)
+    rrf_fused_all = _rrf_fuse(vector_results, lexical_results, candidate_k, settings.rrf_k)
+    fused_all = (_weighted_fuse(...) if settings.fusion_mode == "weighted" else rrf_fused_all)
+    fused = fused_all[:pool_n]
+    for row, fused_score in fused:                   # 逐条补齐分数元数据
+        meta.update({
+            "score": ..., "score_type": "hybrid" if vector_score is not None and lexical_score is not None else ...,
+            "vector_score": ..., "fts_score": ..., "rrf_score": ..., "fusion_mode": ...,
+        })
+        pool.append(Document(page_content=row.content, metadata=meta))</code></pre>
+
+  <div class="callout why"><span class="tag">🎯 两种不同的失败策略</span>
+  <div class="tbl-wrap"><table>
+    <tr><th>场景</th><th>策略</th><th>原因</th></tr>
+    <tr><td>BM25 开着却缺 pg_search 扩展</td><td><b style="color:var(--rose)">直接抛错</b></td><td>环境配置错误；静默回退会让检索质量悄悄劣化、无人察觉（fail-fast 原则）</td></tr>
+    <tr><td>pg_trgm 扩展缺失</td><td><b style="color:var(--amber)">降级到 FTS 并打 warning</b></td><td>simple FTS 仍是可用的合理兜底，中文词法只是"更好的替代品"，没有它系统依然正确</td></tr>
+  </table></div>
+  <p>"什么该崩、什么该降"不是教条，而是看<b>降级后结果是否仍然正确可接受</b>。</p></div>
+
+  <div class="callout why"><span class="tag">🎯 更多取舍</span>
+  <ul>
+    <li><strong>为什么两路各取 60 个候选再融合，而不是各取 Top-8？</strong>融合需要"允许一路失手"：向量漏掉的冷门词法命中可能在第 30 名，池子太小它永远进不了决赛。</li>
+    <li><strong>为什么 trace 要保留完整候选池？</strong>离线评测需要回答"金标到底被哪一步丢掉的"——是通道没召回，还是融合/重排挤掉的。没有全池快照，归因无从谈起。</li>
+  </ul></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>向量管语义、词法管字面；RRF/weighted 负责公平合并；失败策略分"必须崩"和"可以降"。现在候选池有了且排序尚可，但"尚可"不够——下一章请出重排器精修名次。</p></div>
+
+  <details class="quiz"><summary><span class="q">自测</span>RRF 为什么用 1/(60+rank) 而不是直接用名次相加？</summary>
+    <div class="ans">曲线平缓是关键：第 1 名（1/61≈0.0164）与第 2 名（1/62≈0.0161）差距极小，避免单通道的头部候选"一票定音"；而两通道同时靠前的候选得分自然累加、稳定胜出。若直接用名次（如 60−rank），头部差距会被放大，融合就退化成了"谁通道强听谁的"。</div>
+  </details>
+</section>
+
+<!-- ============ 第 6 章 ============ -->
+<section class="chapter" id="ch6">
+  <div class="ch-head"><div class="ch-num">06</div><h2>检索（三）：cross-encoder 重排与邻居上下文</h2></div>
+  <p class="ch-lead">新概念：bi-encoder vs cross-encoder、sigmoid、分数融合、保护名额。精修名次，并收录一个用 A/B 数据换来的反面教材。</p>
+
+  <div class="callout analogy"><span class="tag">🧩 类比招聘</span>
+  <ul>
+    <li>向量模型是 <b>bi-encoder（双塔）</b>：提前把每份简历做成一张摘要卡（向量），面试时只拿 JD 和卡片比——快，但信息压缩有损耗。</li>
+    <li>重排模型是 <b>cross-encoder（交叉）</b>：把 JD 和每份简历<b>逐字拼在一起</b>送进模型细读——精准得多，但每份都要现场读一遍，慢。</li>
+  </ul>
+  <p>所以工程上永远是"bi-encoder 海选几百份 → cross-encoder 终面 Top 几十"，这正是本项目 <code>reranker_candidate_n → Top-K</code> 的两级漏斗。</p></div>
+
+  <h3><span class="dot"></span>6.1 加载：健康检查不是可选项</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/core/rerank.py · L25–55"><code>def get_reranker():
+    """懒加载 CrossEncoder 单例，首次加载后执行一次健康检查。"""
+    global _model
+    if _model is None:
+        from sentence_transformers import CrossEncoder
+        try:
+            model = CrossEncoder(settings.reranker_model)    # 下载/加载（约 400MB）
+        except Exception as exc:
+            raise RerankerUnavailable(f"重排模型加载失败: ...") from exc
+
+        # warmup：用最小输入触发一次真实前向
+        try:
+            scores = model.predict([("健康检查", "健康检查")])
+            if scores is None or len(list(scores)) != 1:
+                raise RerankerUnavailable(f"重排模型健康检查返回异常: {scores!r}")
+        except Exception as exc:
+            raise RerankerUnavailable(
+                "重排模型健康检查失败（HF 缓存可能损坏，请检查 tokenizer.json 等文件是否为 0 字节）: ...")
+        _model = model
+    return _model</code></pre>
+  <div class="callout case"><span class="tag">🔴 真实教训</span>
+  <p>docstring 里记录了一次惨痛教训：HF 缓存损坏（tokenizer 文件 0 字节）时<b>构造函数不报错</b>，只有 predict 才炸——历史上导致重排 40/40 全部静默回退，评测数据被污染而长期无人察觉。所以加载后必须真跑一次前向。<code>main.py:66-73</code> 还在启动阶段就预热它，把"首次下载"从用户请求挪到部署时。</p></div>
+
+  <h3><span class="dot"></span>6.2 重排本体：分数融合 + 保护名额</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/core/rerank.py · L83–146（摘录）"><code>def rerank(query: str, docs, top_k: int):
+    pairs = [[query, d.page_content] for d in docs]      # 每个 (问题, 文档) 对
+    logits = list(model.predict(pairs))                  # 逐对细读打分
+    ...
+    # sentence-transformers 新版对单输出模型已内置 sigmoid（输出在 0~1）；
+    # 再套一层 sigmoid 属双重压缩——不改排序，但压扁 blend 权重的绝对量纲。
+    if logits and min(logits) >= 0.0 and max(logits) <= 1.0:
+        scores = [float(value) for value in logits]      # 已是概率，直接用
+    else:
+        scores = [_sigmoid(float(value)) for value in logits]  # 旧版返回 logit，补一层
+
+    for d, reranker_score in zip(docs, scores):
+        ...
+        if settings.enable_reranker_blend:               # 三路加权：重排为主，RRF/原始分为辅
+            final_score = (
+                settings.reranker_weight * reranker_score        # 0.70
+                + settings.rrf_weight * _normalized(rrf_score, rrf_low, rrf_high)   # 0.20
+                + settings.raw_score_weight * _normalized(raw_score, raw_low, raw_high)  # 0.10
+            )
+        ...
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    selected = [doc for _, doc in ranked[:top_k]]
+    if settings.enable_reranker_blend and settings.reranker_protect_slots and top_k > 0:
+        # 保护名额：RRF 名次最靠前却被重排挤出的少量候选，强制补回
+        protected = sorted(docs, key=lambda d: float(d.metadata.get("rrf_score") or 0.0), reverse=True)[...]
+        for candidate in protected:
+            if candidate in selected:
+                continue
+            candidate.metadata["reranker_protected"] = True
+            if len(selected) >= top_k:
+                selected[-1] = candidate          # 挤掉队尾一个名额
+            ...</code></pre>
+  <div class="callout why"><span class="tag">🎯 三个设计点</span>
+  <ul>
+    <li><strong>sigmoid 去重：</strong>sigmoid 是把任意实数压到 (0,1) 的函数。新旧版 sentence-transformers 行为不同，盲目再套一层会让分数全挤在 0.9 附近，加权融合时权重失真。修复来自专门的健全性测试脚本（scripts/check_reranker_sanity.py）——评测文化又一次立功。</li>
+    <li><strong>为什么 blend 而不是全信重排分？</strong>cross-encoder 单模型也有口味偏差；混入 RRF 和原始召回分相当于"三个评委取加权平均"。</li>
+    <li><strong>保护名额：</strong>检索阶段已确认强相关的证据若被重排全挤出 Top-K，答案会失去事实边界。给 RRF 头部候选留 2 个"保送名额"，是对模型不完美的工程对冲。</li>
+  </ul></div>
+
+  <h3><span class="dot"></span>6.3 邻居扩展：让"命中段"变成"命中上下文"</h3>
+  <p>检索命中的是孤立的 650 字块，但小说情节往往跨块。<code>expand_novel_context</code>（重构后位于 core/retrieval/context.py:126-191）按 <code>chapter_no + chunk_no</code> 精确取回每个主命中前后的邻居块：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/core/retrieval/context.py · L153–159"><code>stmt = select(Embedding).where(
+    visible_user_filter(Embedding.user_id, owner),   # 自己 + 系统租户（visibility.py）
+    Embedding.domain == "novel",
+    Embedding.file_id == current_file,
+    Embedding.chapter_no == chapter_no,
+    Embedding.chunk_no.between(chunk_no - window, chunk_no + window),   # 前后各 window 块
+)</code></pre>
+  <p>邻居块打上 <code>neighbor: True</code> 标记，预算上限 <code>max(2, window*4)</code>，最终按<b>原文顺序</b>排列——传给模型的上下文像原文一样从头读到尾，而引用里仍能区分"主命中"和"上下文补充"。编排入口 <code>retrieve_novel_context</code>（core/rag.py:387-403，留在门面里）固定顺序：<b>主检索 →（可选章节内二级精排）→ 邻居扩展</b>，注释强调"二级精排必须在邻居扩展之前，否则邻居片段会被二次检索打乱，评测也无法区分主命中与上下文扩展"。</p>
+
+  <div class="callout case"><span class="tag">🔴 反面教材 · chapter_local_refine 的教训</span>
+  <p><code>core/retrieval/context.py:42-73</code> 的 docstring 是全项目最值得细读的注释之一。"章节内二次精排"经 A/B 实测是<b>负收益</b>（Recall@10 从 0.325 降到 0.275），因此默认关闭。根因：</p>
+  <ul>
+    <li>候选里主检索文档带的是 RRF 融合序，而本函数对所有候选按 <code>score</code> 排序——该字段在主检索文档上是<b>纯向量余弦分</b>。于是 RRF 融合序被整体丢弃，退化成纯向量检索，词法通道的贡献被抹掉。</li>
+    <li><b>真正的瓶颈不在这里</b>：候选池已含金标的比例是 0.575，最终 Top-10 只留下 0.325——损失发生在池内排序，而非池的召回能力。</li>
+  </ul>
+  <p>三层可迁移的经验：① <b>先归因再优化</b>——用 trace 数据回答"损失发生在哪一步"；② <b>量纲必须统一</b>——不同来源的分数比较前要归一（第 5 章 _minmax_normalize 正是为此而生）；③ <b>负结果也要留档</b>——功能不删、留 docstring 记录实验数据，防止后人重蹈覆辙。</p></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>重排 = cross-encoder 精修名次 + 三路分数融合 + 保护名额；邻居扩展补上下文；还有一条用真实 A/B 数据换来的教训：改进前先定位瓶颈。检索链路至此完整。但用户的问题往往是"他后来为什么走了"——"他"是谁？下一章处理这个。</p></div>
+
+  <details class="quiz"><summary><span class="q">自测</span>为什么海选用 bi-encoder、终面用 cross-encoder，反过来不行吗？</summary>
+    <div class="ans">反过来 = 对全库每个文档做逐对细读：一本 2000 块的小说每次提问要 2000 次模型前向，延迟和算力都不可接受。bi-encoder 的向量可以离线算好、用 HNSW 索引毫秒级检索；cross-encoder 只对几十个候选逐对精读。两级漏斗 = 海选的快 + 终面的准。</div>
+  </details>
+</section>
+
+<!-- ============ 第 7 章 ============ -->
+<section class="chapter" id="ch7">
+  <div class="ch-head"><div class="ch-num">07</div><h2>Query Preparation：问句改写与语义路由</h2></div>
+  <p class="ch-lead">新概念：指代消解、结构化输出校验、保守路由。"他后来为什么走了"——"他"是谁？</p>
+
+  <div class="callout concept"><span class="tag">💡 新概念</span>
+  <p>多轮对话里用户说"他后来为什么走了"，直接拿去检索必然失败。需要先改写成"孙悟空后来为什么离开取经队伍"，这就是<b>指代消解</b>。本项目把"改写 + 判断是否需要检索 + 提取输出偏好"合并为<b>一次</b> LLM 调用，称为 Query Preparation（core/query_rewriter.py）——每次多调一次 LLM 就意味着几百毫秒延迟和真金白银，能合并就合并。</p></div>
+
+  <h3><span class="dot"></span>7.1 结构化输出的校验：不信任模型</h3>
+  <p>模型返回 JSON，但 JSON 可能缺字段、字段值越界、甚至编造原文没有的实体。<code>_validate_payload</code>（query_rewriter.py:202-297）是全部规则，摘录最精彩的三组：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/core/query_rewriter.py · L242–249 与 L277–284"><code># 规则一：路由自洽——需要检索就必须给检索词，不需要就不许给
+if needs_retrieval and not retrieval:
+    return None, "missing_retrieval_query"
+if not needs_retrieval and retrieval:
+    return None, "unexpected_retrieval_query"
+if needs_retrieval and answer_mode != "novel_evidence":
+    return None, "inconsistent_answer_mode"
+
+# 规则二：防幻觉实体——改写结果里出现的新实体，必须在"原问题+历史+记忆"里出现过
+source_text = f"{original}\n{history_text}\n{memory_text}"
+missing_entities = [item for item in entities if len(item) >= 2 and item not in source_text]
+if any(item in standalone for item in missing_entities):
+    return None, "invented_entity"
+
+# 规则三：防止模型把"改写任务"干成"回答任务"
+if any(marker in retrieval or marker in standalone for marker in _ANSWER_MARKERS):
+    return None, "answer_like"          # _ANSWER_MARKERS = ("答案：", "综上", ...)</code></pre>
+  <p>任何一条不过 → <code>_fallback</code>（L300-327）原样返回用户输入，<code>needs_retrieval=True</code>——<b>宁可白检索一次，也不能漏检</b>。这是全模块的安全网。</p>
+
+  <div class="callout warn"><span class="tag">⚠️ 一个容易忽略的语义区分</span>
+  <p>prompt 里专门强调（query_rewriter.py:348-353）：</p>
+  <ul>
+    <li>"不要展示原文，只给总结"是<b>用户输出偏好</b>，不是原文证据请求；</li>
+    <li>"不要展示原文，但回答孙悟空为什么离开"仍<b>需要 RAG</b>，但 output_policy 必须禁止展示原文；</li>
+    <li><b>是否调用 RAG 与是否展示原文是两个独立决策</b>。</li>
+  </ul>
+  <p>"要不要检索"（needs_retrieval）决定证据从哪来；"要不要展示"（output_policy）决定答案长什么样。把它们揉成一个开关是很多 RAG 产品的经典 bug。</p></div>
+
+  <h3><span class="dot"></span>7.2 路由：LLM 说不用检索，就真不检索吗？</h3>
+  <p>改写结果作为 routing_hint 传给 Agent 的路由节点，<code>_routing_choice</code>（agent/router.py:92-149）决定最终答案，核心是<b>保守兜底</b>：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/router.py · L120–149（摘录）"><code>llm_needs = bool(routing_hint["needs_retrieval"])
+confidence = float(routing_hint["confidence"])
+reasons: list[str] = []
+if confidence < settings.query_routing_confidence_threshold:   # 置信度 < 0.75
+    reasons.append("low_confidence")
+if _strong_novel_signal(f"{query} ..."):                       # 问句里有强小说信号词
+    reasons.append("strong_novel_signal")
+if mode == "novel_evidence":
+    reasons.append("novel_evidence_mode")
+if llm_needs:
+    return True, ...                                           # LLM 说要 → 要
+if reasons:                                                    # LLM 说过不要 → 但有兜底信号，强制要
+    return True, "forced_by_" + reasons[0], "novel_evidence", ...
+return False, ...                                              # 都干净 → 真不用</code></pre>
+  <div class="callout why"><span class="tag">🎯 为什么这么保守</span>
+  <p><b>成本不对称</b>：多检索一次的代价是几十毫秒；漏检的代价是模型没证据、开始瞎编——用户体验直接归零。所以路由永远偏向"检索"。策略选择同样保守：<code>normalize_strategy</code>（router.py:152-157）在 auto 模式下，长度 ≥ 32 或命中 ≥ 2 个小说信号词就升级 multi_expert；未知策略值回退 direct。</p></div>
+
+  <div class="callout why"><span class="tag">🎯 为什么校验而不是直接信 JSON</span>
+  <p>LLM 输出本质是"概率性的文本"，任何进入业务逻辑的结构都必须过白名单校验（intent 枚举、confidence 范围、字符串长度上限……）。<code>_validate_payload</code> 返回 <code>(None, 失败原因)</code> 而不是抛异常——校验失败是<b>预期内</b>的常规事件，有专门的降级路径，不值得打断调用栈。OpenAI 的 JSON mode 只能约束格式，约束不了<b>语义</b>（编造实体、答非所问的改写依然会出现），所以服务端校验不可省。</p></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>一次 LLM 调用完成改写/路由/偏好提取；输出先过三道校验再进业务；路由永远保守偏向检索。问题和策略都定了，下一章进入全项目最复杂的部分——Agent 编排。</p></div>
+</section>
+
+<!-- ============ 第 8 章 ============ -->
+<section class="chapter" id="ch8">
+  <div class="ch-head"><div class="ch-num">08</div><h2>Agent 编排：LangGraph 多专家流水线</h2></div>
+  <p class="ch-lead">新概念：LangGraph 状态图、asyncio 并发、事件队列。全项目最复杂也最值得细读的一章。</p>
+
+  <div class="callout concept"><span class="tag">💡 新概念 · LangGraph</span>
+  <p>前面的逻辑都是"函数 A 调函数 B"的直线，但 Agent 的执行是<b>分支流程图</b>：路由后可能走 direct（2 步）、multi_expert（5 步带纠偏回环）……手写 if-else 嵌套会迅速失控。<b>LangGraph</b> 把流程显式建成一张图：<b>节点</b>是 async 函数（读一个共享 State、返回增量更新），<b>边</b>定义"下一步去哪"，<b>条件边</b>按 State 字段分流。类比工厂流水线：State 是传送带上的工件箱，节点是工位，条件边是岔路机的传感器。</p></div>
+
+  <h3><span class="dot"></span>8.1 共享状态：AgentState</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/types.py · L42–87（摘录）"><code>class AgentState(TypedDict, total=False):
+    """LangGraph 在各节点之间传递的共享状态。字段允许按执行路径逐步填充。"""
+    query: str                       # 交给图的独立问题（已消解指代）
+    original_query: str              # 用户原始输入
+    needs_retrieval: bool            # 路由结论：要不要检索
+    strategy: str                    # direct / multi_expert / react / plan_execute
+    plan: list[dict[str, Any]]       # 展示用执行计划
+    evidence: list[dict[str, Any]]   # 共享证据（所有专家共用！）
+    sources: list[dict[str, Any]]    # 引用来源（给前端的 [S#] 清单）
+    expert_tasks: dict[str, dict]    # 四专家任务
+    reports: list[dict[str, Any]]    # 专家报告
+    report_validation: dict[str, dict]  # 契约校验结果
+    refine_agents: list[str]         # 需要纠偏的专家
+    answer: str                      # 最终答案
+    event_queue: Any                 # SSE 事件队列（贯穿全程的"直播线路"）</code></pre>
+  <p><code>total=False</code> 表示字段可缺省——不同策略只填自己用的字段。</p>
+
+  <h3><span class="dot"></span>8.2 图的定义：一张图看懂全流程</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/runtime.py · L718–756"><code>def _build_graph():
+    graph = StateGraph(AgentState)
+    graph.add_node("route", _route_node)              # 路由：策略 + 是否检索
+    graph.add_node("plan", _plan_node)                # 生成可展示的执行计划
+    graph.add_node("retrieve", _retrieve_node)        # 共享检索（只跑一次！）
+    graph.add_node("dispatch", _dispatch_node)        # 拆四个专家任务
+    graph.add_node("experts", _experts_node)          # 四专家并发分析
+    graph.add_node("validate_reports", _validate_reports_node)  # 契约/重复校验
+    graph.add_node("refine_experts", _refine_experts_node)      # 一次纠偏
+    graph.add_node("execute", _execute_node)          # react/plan_execute 的多步工具
+    graph.add_node("reflect", _reflect_node)          # 检查证据是否足够
+    graph.add_node("supervisor", _supervisor_node)    # 内部汇总准备
+    graph.add_node("summary", _summary_node)          # 最终总结（流式）
+
+    graph.add_edge(START, "route")
+    graph.add_edge("route", "plan")
+    graph.add_conditional_edges(                      # 条件边：按 needs_retrieval 分流
+        "plan", _after_plan, {"retrieve": "retrieve", "supervisor": "supervisor"})
+    graph.add_conditional_edges(
+        "retrieve", _after_retrieve,                  # 按策略分流
+        {"dispatch": "dispatch", "execute": "execute", "supervisor": "supervisor"})
+    graph.add_edge("dispatch", "experts")
+    graph.add_edge("experts", "validate_reports")
+    graph.add_conditional_edges(
+        "validate_reports", _after_validation,        # 有报告不合格 → 纠偏，否则汇总
+        {"refine": "refine_experts", "supervisor": "supervisor"})
+    graph.add_edge("refine_experts", "supervisor")
+    graph.add_edge("execute", "reflect")
+    graph.add_edge("reflect", "supervisor")
+    graph.add_edge("supervisor", "summary")
+    graph.add_edge("summary", END)
+    return graph.compile()
+
+agent_graph = _build_graph()      # 模块级编译一次，进程内复用</code></pre>
+
+  <p>三条执行路径在图里一目了然：</p>
+  <div class="path"><span class="lab">direct</span>
+    <span class="n">route</span><span class="a">→</span><span class="n">plan</span><span class="a">→</span><span class="n">retrieve</span><span class="a">→</span><span class="n">supervisor</span><span class="a">→</span><span class="n hl">summary</span></div>
+  <div class="path"><span class="lab">multi_expert</span>
+    <span class="n">route</span><span class="a">→</span><span class="n">plan</span><span class="a">→</span><span class="n">retrieve</span><span class="a">→</span><span class="n">dispatch</span><span class="a">→</span><span class="n">experts</span><span class="a">→</span><span class="n">validate</span><span class="a">→</span><span class="n hl">refine?</span><span class="a">→</span><span class="n">supervisor</span><span class="a">→</span><span class="n hl">summary</span></div>
+  <div class="path"><span class="lab">react / plan</span>
+    <span class="n">route</span><span class="a">→</span><span class="n">plan</span><span class="a">→</span><span class="n">retrieve</span><span class="a">→</span><span class="n">execute</span><span class="a">→</span><span class="n">reflect</span><span class="a">→</span><span class="n">supervisor</span><span class="a">→</span><span class="n hl">summary</span></div>
+
+  <div class="callout why"><span class="tag">🎯 为什么 retrieve 只跑一次</span>
+  <p>四个专家如果各自调 RAG，就是四倍检索延迟 + 四倍 embedding 费用，而且四份证据不一致会互相打架。共享证据还有个隐含好处：所有专家引用同一套 [S#] 编号，Supervisor 汇总时引用不会错位。</p></div>
+
+  <h3><span class="dot"></span>8.3 SSE 直播线路：事件队列</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/runtime.py · L28–31 与 L762–814"><code>async def _emit(state: AgentState, event_type: str, data: Any) -> None:
+    queue = state.get("event_queue")
+    if queue is not None:
+        await queue.put({"type": event_type, "data": data})   # 节点只管发
+
+async def stream_agent_question(query, strategy="auto", file_id=None, ...):
+    queue: asyncio.Queue = asyncio.Queue()
+    initial: AgentState = {..., "event_queue": queue}
+
+    async def run_graph() -> None:
+        try:
+            await agent_graph.ainvoke(initial)       # 后台任务里跑完整张图
+        except Exception as exc:
+            await queue.put({"type": "error", "data": {...}})
+        finally:
+            await queue.put(_STREAM_DONE)            # 哨兵对象：表示流结束
+
+    graph_task = asyncio.create_task(run_graph())    # 图在后台跑
+    try:
+        while True:
+            event = await queue.get()                # 主协程只管吐事件给 SSE
+            if event is _STREAM_DONE:
+                break
+            yield event                              # yield 给调用方（api/chat.py）
+    finally:
+        # 客户端断开 SSE 时取消图任务，避免后台继续消耗模型和检索资源。
+        if not graph_task.done():
+            graph_task.cancel()
+            await asyncio.gather(graph_task, return_exceptions=True)</code></pre>
+  <p>生产者（图）与消费者（SSE）解耦，任何一边慢都不阻塞另一边；<code>finally</code> 里的取消逻辑保证用户关掉页面后，后台不会继续烧 API 费用。</p>
+
+  <h3><span class="dot"></span>8.4 多专家并发：超时隔离的教科书写法</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/runtime.py · L343–408（摘录）"><code>task_map: dict[asyncio.Task, str] = {}
+for name in names:
+    ...
+    task_map[asyncio.create_task(_run_specialist(contract, state, f"expert-{name}", ...))] = name
+    # create_task 立即返回，四个 LLM 请求同时飞出去
+
+# 统一超时等待：done=已完成的，pending=到点还没完的
+done, pending = await asyncio.wait(task_map, timeout=settings.agent_multi_expert_timeout)
+for task in done:
+    reports[task_map[task]] = task.result()          # 成功的收结果
+for task in pending:
+    name = task_map[task]
+    task.cancel()                                    # 未完成的取消
+    reports[name] = {..., "status": "timeout", ...}  # 记为 timeout 而不是拖垮整轮
+if pending:
+    await asyncio.gather(*pending, return_exceptions=True)  # 等取消落地，避免孤儿任务</code></pre>
+  <p><code>_run_specialist</code>（L269-340）内部把每个 token 同时做两件事：<code>parts.append(token)</code> 攒成完整报告 + <code>await _emit(state, "tool_token", {..., "delta": token})</code> 实时推给前端。<b>专家分析是流式展示的</b>——用户在等最终答案时能看到四个专家各自的思考实时滚动。单个专家抛异常只影响自己（返回 status="error" 的报告），四个全挂才置 <code>fallback_reason="all_experts_failed"</code>。</p>
+
+  <h3><span class="dot"></span>8.5 专家契约与报告校验</h3>
+  <p>四个专家的职责边界是<b>写死的契约</b>（agent/contracts.py:18-51，摘录人物专家）：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/contracts.py · L18–27"><code>"character": SpecialistContract(
+    name="character",
+    label="人物关系专家",
+    focus=("人物身份与称谓", "关系边与双方立场", "人物动机", "关系变化阶段", "事实与推断的区分"),
+    forbidden=("完整复述故事情节", "输出章节定位总表", "替代时间线专家排列全部事件"),
+    output_format="Markdown 引用块；依次输出：关系边、变化阶段、事实与推断、证据不足。",
+    required_groups=(("关系", "立场", "称谓"), ("动机", "变化", "阶段"), ("事实", "推断", "证据不足")),
+),</code></pre>
+  <p><code>focus/forbidden/output_format</code> 进 prompt 约束模型；<code>required_groups</code> 给<b>程序校验</b>用——报告必须各命中至少一个关键词组，否则判"契约不合格"（agent/validation.py:31-67）。报告之间的<b>重复度检测</b>用 3-gram Jaccard：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/validation.py · L15–28"><code>def char_ngrams(text: str, size: int = 3) -> set[str]:
+    """归一化后切成字符 3-gram。"""
+    normalized = _normalize(text)                    # 去引用符、去标点、转小写
+    return {normalized[i:i+size] for i in range(len(normalized) - size + 1)}
+
+def report_similarity(left: str, right: str) -> float:
+    a, b = char_ngrams(left), char_ngrams(right)
+    return round(len(a & b) / len(a | b), 4)         # 交集/并集 ∈ [0,1]</code></pre>
+  <p>Jaccard = 两个集合的交集除以并集。用字符 3-gram 而不是整词，是因为中文分词本身有歧义，字符片段是更稳定的相似性信号。相似度 ≥ 0.72 的两份报告会被标记，<b>契约分低的一方</b>进入纠偏（validation.py:87-107）。</p>
+  <div class="callout why"><span class="tag">🎯 纠偏为什么只做一次</span>
+  <p>专家重写很贵，而 Supervisor 本来就会去重汇总——流程要为"大部分情况一次就好"优化，而不是为极端情况无限重试。</p></div>
+
+  <h3><span class="dot"></span>8.6 工具注册表：权限、超时、安全的计算器</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/tools.py · L42–67"><code>async def execute(self, name, *, allowed_tools, **kwargs):
+    if name not in self._specs or name not in allowed_tools:
+        return ToolResult(status="denied", error_code="tool_not_allowed", tool=name)
+        # 双重白名单：注册过 ≠ 允许用。路由节点给每个策略分配 allowed_tools（router.py:194-214）
+    try:
+        result = await asyncio.wait_for(self._handlers[name](**kwargs), timeout=spec.timeout_seconds)
+    except asyncio.TimeoutError:
+        return ToolResult(status="timeout", ...)     # 超时不抛异常，返回结构化结果
+    except Exception as exc:
+        return ToolResult(status="error", ...)       # 任何异常都变成 ToolResult</code></pre>
+  <p>计算器工具是"最小权限"的好例子（tools.py:137-150）：模型要算数时不让它写代码，而是解析成 AST、只允许白名单运算符、指数超过 8 直接拒绝：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/tools.py · L137–150（摘录）"><code>def _safe_eval(node: ast.AST) -> float:
+    """递归计算受限 AST 表达式；不执行变量、函数调用或任意 Python 代码。"""
+    if isinstance(node, ast.BinOp) and type(node.op) in _ALLOWED_OPERATORS:
+        ...
+        if isinstance(node.op, ast.Pow) and abs(right) > 8:
+            raise ValueError("exponent_too_large")   # 防 2**999999 打爆内存
+    raise ValueError("unsupported_expression")</code></pre>
+  <div class="callout why"><span class="tag">🎯 为什么不用 eval()</span>
+  <p>模型输出是不可信输入，eval 等于让外部输入直接在服务端执行代码，是安全红线。AST 白名单求值 20 行代码换来绝对可控。</p></div>
+
+  <h3><span class="dot"></span>8.7 最终汇总：流式 + 输出护栏</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/agent/runtime.py · L670–683（摘录）"><code>async for token in _stream_llm([...], settings.agent_synthesis_max_tokens):
+    parts.append(token)
+    await _emit(state, "token", token)               # 一边生成一边推给前端
+answer = _sanitize_summary("".join(parts), policy)   # 生成完做净化
+if answer != "".join(parts):
+    # 输出护栏净化改变了内容（去引用/截断引语/隐藏 [S#]）时，
+    # 以完整净化稿覆盖已流式渲染的内容：流式体验与护栏语义同时成立。
+    await _emit(state, "token_replace", answer)</code></pre>
+  <p><code>token_replace</code> 是个巧妙的设计：流式要快，所以先原样吐字；但用户设置了"不要展示原文"时，<code>_sanitize_summary</code>（L602-613）会把答案里的长引语截断、引用块剥掉。先流式后覆盖，前端收到 token_replace 就整体替换（第 10 章）。牺牲一次重绘，换来"快"和"合规"兼得。证据为空时（L630-632）直接返回固定话术——<b>"检索不到就不编"</b>，这是 RAG 系统最重要的诚实性兜底。</p>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>一张 LangGraph 图承载三种策略；共享检索、共享证据；专家契约 + 程序校验 + 一次纠偏控制质量；队列解耦执行与直播；工具闸门统一权限和超时。下一章看这些事件如何变成 HTTP 响应。</p></div>
+
+  <details class="quiz"><summary><span class="q">自测 1</span>multi_expert 为什么在 retrieve 之后才 dispatch？反过来行吗？</summary>
+    <div class="ans">反过来（先拆任务、各专家自己检索）意味着四次独立 RAG：四倍延迟、四倍 embedding 费用，且四份证据可能不一致，专家结论会互相打架，引用编号也对不上。先共享检索 = 所有专家读同一份"考场材料"，[S#] 全局唯一。</div>
+  </details>
+  <details class="quiz"><summary><span class="q">自测 2</span>token_replace 解决了什么矛盾？</summary>
+    <div class="ans">"流式要快（先生成先吐字）"与"输出护栏要合规（用户要求不展示原文时必须截断引语/剥掉引用）"之间的矛盾。方案：流式照常吐，生成完毕后跑净化，若有变化就发一个 token_replace 让前端整体覆盖——多一次重绘，换来两者兼得。</div>
+  </details>
+</section>
+
+<!-- ============ 第 9 章 ============ -->
+<section class="chapter" id="ch9">
+  <div class="ch-head"><div class="ch-num">09</div><h2>API 层：用 SSE 把思考过程"直播"出去</h2></div>
+  <p class="ch-lead">新概念：SSE——服务器单向推送。event_gen 是整个后端的"总导演"。</p>
+
+  <div class="callout concept"><span class="tag">💡 新概念 · SSE</span>
+  <p><b>WebSocket</b> 是双向长连接，功能强但重：需要协议升级、心跳、状态管理。而"AI 逐字回答"只需要<b>服务器 → 浏览器</b>的单向推送，于是更轻的 <b>SSE</b>（Server-Sent Events）就够了：本质是一个<b>不结束的 HTTP 响应</b>，<code>Content-Type: text/event-stream</code>，按文本协议一段段写事件：</p></div>
+  <pre class="code" data-lang="text" data-file="SSE 报文示例"><code>event: token
+data: 林
+
+event: token
+data: 黛玉
+
+event: done
+data:</code></pre>
+  <p>浏览器一边收一边渲染，用户看到"打字机效果"。</p>
+
+  <h3><span class="dot"></span>9.1 会话与历史：先把地基校验一遍</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/api/chat.py · L163–196（摘录）"><code>if not req.file_id:
+    raise HTTPException(status_code=400, detail="请先从小说列表中选择当前咨询对象")
+
+# 校验这本书"可见"：自己的书 OR 系统默认书，且已索引（可见性统一走 visibility.py）
+target_file = await session.execute(
+    select(KnowledgeFile).where(
+        KnowledgeFile.id == req.file_id,
+        visible_user_filter(KnowledgeFile.user_id, user_id),   # L169：可见 ≠ 可写
+        KnowledgeFile.domain == req.domain,
+        KnowledgeFile.status == "indexed",
+    ))
+
+# 会话绑定校验：一场对话只能聊一本书，换书必须换会话
+elif chat_session.file_id and chat_session.file_id != req.file_id:
+    raise HTTPException(status_code=409, detail="当前会话绑定了另一部小说，请切换会话")</code></pre>
+  <p>同样的 <code>visible_user_filter</code> 也用在 <code>create_session</code>（chat.py:88-92）——用户可以选系统书开新会话，但管理界面里它仍归 system 租户所有。</p>
+  <div class="callout why"><span class="tag">🎯 会话防串书为什么重要</span>
+  <p>看似小事，实则是<b>检索正确性</b>的一部分：证据过滤靠 file_id，会话若能跨书，答案就会把《红楼梦》的段落引到《西游记》的问题里。</p></div>
+
+  <h3><span class="dot"></span>9.2 事件生成器：整个后端的"总导演"</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/api/chat.py · L219–363（摘录，按时间顺序）"><code>async def event_gen():
+    yield {"event": "session", "data": session_id}       # ① 先把会话 ID 发出去
+
+    async with asyncio.timeout(settings.agent_request_timeout):   # ② 全程 240s 硬顶
+        ...
+        # ③ 召回记忆：吞错降级已收敛进 memory_service.safe_build_context
+        #    （失败返回空上下文 + 告警日志），chat.py 只负责发事件
+        memory_context = await memory_service.safe_build_context(...)
+        yield _sse_event("memory_context", {...})
+
+        # ④ Query Preparation（第 7 章）
+        rewrite = await rewrite_query(req.message, history_messages, memory_context=memory_context)
+
+        # ⑤ 用户明确表达展示偏好 → 立即落库（safe 包装：失败返回 False）
+        preference_persisted = await memory_service.safe_upsert_preference(preference_update, ...)
+        if preference_persisted:
+            yield _sse_event("memory_updated", {"status": "applied", ...})
+
+        # ⑥ 进入 Agent 图，逐事件转发
+        async for stream_event in stream_agent_question(...):
+            event_type = stream_event["type"]
+            if event_type == "sources":
+                reply_sources = payload or []             # 引用清单（记住，落库要用）
+                yield _sse_event("sources", reply_sources)
+            elif event_type == "token":
+                full_reply.append(token)                  # 攒最终答案
+                yield _sse_event("token", token)
+            elif event_type == "token_replace":
+                full_reply.clear(); full_reply.append(replaced)   # 净化稿为准
+                yield _sse_event("token_replace", replaced)
+            elif event_type == "meta":
+                meta = payload or {}
+                ...
+                # meta 必须转发给前端：onMeta 依赖它更新 output_policy 与
+                # 策略/回退信息（此前只记日志不下发，前端永远收不到）。
+                yield _sse_event("meta", meta)            # ← 重构修复的一行（L322）
+
+    # ⑦ 收尾：持久化答案（失败只记日志——答案已经在用户屏幕上了，别让它消失）
+    reply = "".join(full_reply)
+    if persist:
+        assistant_message_id = await _persist_message(session_id, "assistant", reply, reply_sources)
+        # ⑧ 记忆更新丢给后台任务（带超时与吞错的 safe 包装），不占用响应
+        asyncio.create_task(update_memory_background())
+        yield _sse_event("memory_updated", {"status": "scheduled"})
+    yield {"event": "done", "data": ""}
+
+return EventSourceResponse(event_gen(), ping=10, ...)     # sse-starlette 负责协议细节</code></pre>
+
+  <div class="callout case"><span class="tag">🔴 重构修复的真实 bug · meta 事件"只生产、不投递"</span>
+  <p>meta 事件此前在 event_gen 里<b>只写日志、没有 yield</b>——后端日志里 <code>chat.agent_finished</code> 一切正常，
+  但前端的 onMeta 回调永远等不到数据：output_policy 更新失效、"使用 N 条记忆 / 本轮无需检索"等依赖 meta 的 UI 全部静默失灵。</p>
+  <p>修复只有一行（chat.py:322 的 <code>yield _sse_event("meta", meta)</code>）。教训是：
+  <b>事件驱动的架构里，"生产事件"和"投递事件"是两件事，必须都有测试盯住</b>——
+  日志正常 ≠ 用户看到的东西正常。重构同时新增的 <code>backend/tests/test_chat_api.py</code> 正是为此补上的回归测试。</p></div>
+  <div class="callout why"><span class="tag">🎯 几个值得记住的取舍</span>
+  <ul>
+    <li><b>记忆上下文失败为什么只降级、不阻断？</b>没有记忆，答案质量下降但不至于错误；为了它中断问答得不偿失。对比第 5 章 BM25 的 fail-fast——同样是异常，处理方式取决于"降级后是否仍正确"。注意重构后 <b>try/except 本身也搬走了</b>：chat.py 调的是 <code>safe_build_context</code>，吞错逻辑收敛在 memory_service（第 11 章）。</li>
+    <li><b>asyncio.timeout 包住全程：</b>给"AI 问答"这类无上限的外部调用族一个硬边界，超时给用户明确提示（request_timeout 事件）而不是无限转圈。</li>
+    <li><b>每个事件处理点都检查 request.is_disconnected()：</b>客户端断开立刻 return，连锁触发第 8 章 finally 里的图任务取消，资源不泄漏。</li>
+  </ul></div>
+
+  <h3><span class="dot"></span>9.3 鉴权中间件与用户注入</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/main.py · L169–181（摘录）"><code>if not user_id:
+    return JSONResponse(status_code=401, content={"detail": "未授权：..."})
+
+token = set_current_user(user_id)        # 写进 ContextVar（第 4 章）
+try:
+    response = await call_next(request)  # 后续所有路由/业务代码都能 get_current_user()
+    return response
+finally:
+    reset_current_user(token)            # 请求结束必须恢复，防止上下文串号</code></pre>
+  <p>JWT 本体是纯标准库实现（core/security.py:57-97）：HMAC-SHA256 签名、恒定时间比较（<code>hmac.compare_digest</code>，防时序攻击）、过期与类型校验。密码用 PBKDF2（26 万轮迭代 + 随机盐，security.py:17-28）——不引入重型依赖也守住安全底线。<b>为什么用中间件而不是每个路由写鉴权？</b>正好和第 4 章的 ContextVar 呼应：入口一处 set，全链路可用；漏写一处的风险从"每个路由"缩小到"中间件本身"。</p>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>SSE = 不结束的 HTTP 响应；event_gen 把"记忆 → 改写 → Agent 图 → 落库 → 记忆更新"串成一条带超时、可取消的流水线；鉴权在中间件一次完成。下一章去浏览器那边接住这条流。</p></div>
+</section>
+
+<!-- ============ 第 10 章 ============ -->
+<section class="chapter" id="ch10">
+  <div class="ch-head"><div class="ch-num">10</div><h2>前端：用 fetch 手工解析 SSE 流</h2></div>
+  <p class="ch-lead">新概念：ReadableStream 与 SSE 文本协议。不依赖任何流式库，60 行搞定。</p>
+
+  <div class="callout concept"><span class="tag">💡 为什么不直接用 EventSource？</span>
+  <p>浏览器有原生 SSE 客户端 <code>EventSource</code>，但它<b>只支持 GET、不能带自定义 header</b>。本项目需要：POST + <code>Authorization: Bearer</code> + JSON body。所以用 <code>fetch</code> + <code>ReadableStream</code> 手工解析（client.ts:1-4 的注释开门见山说了这个原因）。</p></div>
+
+  <h3><span class="dot"></span>10.1 SSE 解析器：缓冲、切块、分发</h3>
+  <pre class="code" data-lang="ts" data-file="frontend/src/api/client.ts · L333–362"><code>const consumeSseStream = async (res: Response, handlers: StreamHandlers) => {
+  const reader = res.body!.getReader()        // 拿到字节流读取器
+  const decoder = new TextDecoder()
+  let buffer = ''                             // 关键：网络是按"块"到的，不是按"事件"
+  const dispatcher = createSseDispatcher(handlers)
+
+  const drain = () => {                       // 把缓冲区里所有完整事件块吃干净
+    const separator = /\r?\n\r?\n/            // SSE 约定：事件之间以空行分隔
+    let match: RegExpMatchArray | null
+    while ((match = buffer.match(separator))) {
+      const block = buffer.slice(0, match.index!)     // 一个完整事件块
+      buffer = buffer.slice(match.index! + match[0].length)  // 从缓冲区移除
+      const parsed = parseSseBlock(block)
+      if (parsed.event) dispatcher.dispatch(parsed.event, parsed.data)
+    }
+    // 不完整的事件块留在 buffer 里，等下一个网络块到了再拼
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()   // 等下一段字节
+    if (done) { drain(); dispatcher.finish(); return }
+    buffer += decoder.decode(value, { stream: true })  // stream:true 处理跨块的多字节字符
+    drain()
+  }
+}</code></pre>
+  <p>为什么必须缓冲？网络传输按 TCP 包分块，一个 token 事件的半截 JSON 可能横跨两个网络包——不缓冲就会解析出半截数据。<code>decoder.decode(value, { stream: true })</code> 同理：一个中文字符是 3 字节，可能被 TCP 拆开，流式解码器会记住残缺字节等下一块。事件分发（client.ts:291-327）是一张"事件名 → 回调"的路由表；<code>done</code> 有 completed 标志防重复触发，<code>finish()</code> 保证流意外断开时也回调 onDone，UI 不会卡在"正在思考"。</p>
+
+  <h3><span class="dot"></span>10.2 发起请求与 UI 状态</h3>
+  <pre class="code" data-lang="ts" data-file="frontend/src/api/client.ts · L364–393"><code>const controller = new AbortController()
+fetch(BASE + '/chat', { method: 'POST', ..., signal: controller.signal })
+  .then(async (res) => { await ensureSuccess(res); await consumeSseStream(res, handlers) })
+  .catch((error) => { if (error.name !== 'AbortError') handlers.onError?.(error) })
+return controller        // 调用方拿到 controller，stop() 时 abort()</code></pre>
+
+  <pre class="code" data-lang="ts" data-file="frontend/src/components/ChatPanel.vue · L292–326（摘录）"><code>onToken: (t) => {
+  messages.value[aiIndex].content += t     // 累加到当前消息
+  updateRendered(aiIndex)                  // 50ms 节流的 Markdown 重渲染
+  scrollToBottom()                         // 智能跟随：仅在贴近底部时滚
+},
+onTokenReplace: (t) => {
+  messages.value[aiIndex].content = t      // 后端净化稿整体覆盖
+  updateRendered(aiIndex)
+},
+onToolToken: (t) => {
+  const step = m.tools?.find((item) => item.id === t.id)   // 按 id 找到对应专家卡片
+  if (step) step.text = (step.text || '') + (t.delta || '')  // 专家报告流式滚动
+},</code></pre>
+  <p><code>updateRendered</code> 的 50ms 节流（ChatPanel.vue:156-168）是小而重要的优化：LLM 每 token 都会触发回调，逐 token 做 Markdown→HTML 转换 + DOM 更新会卡；攒 50ms 批量渲染，肉眼无感，CPU 减负大半。滚动跟随也有讲究（L105-116）：<code>scrollHeight - scrollTop - clientHeight &lt; 32</code> 判断用户是否本就贴近底部——用户上翻阅读历史时<b>不</b>强制拉回底部，这是聊天产品的基本修养。路由守卫（router/index.ts:30-39）在进入 /chat 前检查本地 token，未登录跳 /login 并带 redirect 参数——登录后能回到原页面。</p>
+  <div class="callout why"><span class="tag">🎯 重构后的前端变化</span>
+  <ul>
+    <li><b>解析核心可测了</b>：SSE 块解析器 <code>parseSseBlock</code> 导出为公共函数（client.ts:280），并配了 vitest 单测（frontend/src/api/client.test.ts）。纯函数导出 + 单测，是解析类代码最划算的保险——SSE 协议的边角（\r\n、多行 data、前导空格）最容易在重构中被悄悄改坏。</li>
+    <li><b>系统书的 UI 礼仪</b>：书库接口现在返回 <code>is_system</code> 标记（client.ts:123）；KnowledgeManager 对系统书显示"系统"徽章并隐藏删除/重索引按钮；进入页面时若无有效选择，自动兜底选中已索引的系统书（chat.vue:55-79）——新用户零操作即可提问。</li>
+    <li><b>工程化</b>：接入 eslint（frontend/eslint.config.js），CI 同步更新。</li>
+  </ul></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>前端不依赖任何流式库，60 行搞定 SSE 解析；关键在缓冲与节流。至此主线全部打通。还有两条支线——记忆与评测，它们决定这个系统能否"越用越好、改得放心"。</p></div>
+
+  <details class="quiz"><summary><span class="q">自测</span>SSE 解析为什么需要一个 buffer + drain 循环，直接逐块 parse 不行吗？</summary>
+    <div class="ans">TCP 按包送达，应用层"一次 read"拿到的字节边界与 SSE 事件边界没有任何对应关系：一个事件可能被拆成两半，也可能一次到了三个事件。buffer 攒字节、drain 用 <code>/\r?\n\r?\n/</code> 反复切出完整块，不完整的尾巴留给下一轮——这是所有流式协议解析的标准姿势（WebSocket、JSON Lines 同理）。</div>
+  </details>
+</section>
+
+<!-- ============ 第 11 章 ============ -->
+<section class="chapter" id="ch11">
+  <div class="ch-head"><div class="ch-num">11</div><h2>记忆闭环：摘要与三层长期记忆</h2></div>
+  <p class="ch-lead">新概念：为什么需要记忆、三层作用域、水位摘要。</p>
+
+  <div class="callout concept"><span class="tag">💡 为什么要记忆</span>
+  <p>上下文窗口有限，不可能把 100 轮对话全部塞给模型。业界标准解法分两层：<b>摘要（summary）</b>把旧对话压缩成一段话代替原文历史；<b>长期记忆（memory）</b>从对话中抽取"值得跨会话保留的事实"存起来按需召回。本项目把记忆分<b>三层作用域</b>：</p></div>
+  <div class="tbl-wrap"><table>
+    <tr><th>类型</th><th>作用域</th><th>例子</th></tr>
+    <tr><td><code>user_preference</code></td><td>用户全局</td><td>"不要展示原文，只给总结"</td></tr>
+    <tr><td><code>novel_fact</code></td><td>当前这本书</td><td>"用户在关注宝玉挨打情节"</td></tr>
+    <tr><td><code>session_fact</code></td><td>当前会话</td><td>"上面说的'他'指贾政"</td></tr>
+  </table></div>
+
+  <h3><span class="dot"></span>11.1 召回：偏好永远在场，其余按相关性</h3>
+  <pre class="code" data-lang="python" data-file="backend/app/services/memory_service.py · L197–242（摘录）"><code>async def retrieve_memories(*, query, session_id, file_id, limit=None):
+    """按当前会话、当前小说、用户偏好三层作用域召回记忆。
+
+    用户偏好不是普通语义文档：必须始终纳入上下文，避免"不要展示原文"
+    因为向量相关性不足而在下一轮失效；其余记忆再按相关性排序截断。
+    """
+    scope = or_(                                   # 三层并集：本会话 ∪ 本书 ∪ 全局
+        AgentMemory.session_id == session_id,
+        AgentMemory.file_id == file_id if file_id else AgentMemory.file_id.is_(None),
+        (AgentMemory.session_id.is_(None) & AgentMemory.file_id.is_(None)),
+    )
+    # 偏好单独查，全量带出（最多 10 条），不做相似度过滤
+    preference_result = await session.execute(
+        base.where(AgentMemory.memory_type == "user_preference")...)
+    # 其余记忆用向量相似度排序（算过 embedding 的记忆存在 agent_memories.embedding 列）
+    if query_vector:
+        other_stmt = other_stmt.order_by(
+            AgentMemory.embedding.cosine_distance(query_vector).asc().nullslast(),
+            AgentMemory.importance.desc(), ...)    # 相似度优先，重要性次之</code></pre>
+  <p>注意 scope 的语义：novel_fact 存库时 session_id=None（按类型决定挂哪个作用域，memory_service.py:383-385），所以"本书"条件是 file_id == 当前书；全局偏好两个外键都是 NULL。一个 OR 条件精确表达三层并集，且天然带 user_id 隔离。</p>
+
+  <h3><span class="dot"></span>11.2 写入：抽取、去重、版本</h3>
+  <p>回答完成后，后台任务 <code>maintain_conversation_memory</code>（memory_service.py:363-418）做三件事：</p>
+  <ol>
+    <li><b>抽取记忆</b>（L335-360）：一次 LLM 调用，prompt 限定只允许三种类型、最多 5 条、并给出负面清单（"不要保存问候、临时推断、助手自创内容"）。服务端再校验类型白名单和重要性下限（memory_min_importance=0.55），过滤模型废话。</li>
+    <li><b>去重/更新</b>（L116-174）：同作用域同内容的记忆只提升 importance；同 preference_key 的偏好则版本号 +1 并覆盖内容——"改主意"是合法操作，留版本便于追溯。</li>
+    <li><b>滚动摘要</b>：等未覆盖消息超过阈值（8 条或 5000 字，config.py:143-144），把"旧摘要 + 最近 30 条消息"交给 LLM 压缩成新摘要，记录 covered_message_id 水位（L394-417）。下次只摘要增量——像日志系统的 checkpoint。</li>
+  </ol>
+  <p>整个函数由 api/chat.py 的后台任务调度（chat.py:349-362）：<code>asyncio.create_task</code> 启动、30s 超时——但重构后连"超时 + 吞错"也搬进了 service 层的 <code>maintain_conversation_memory_safe</code>，chat.py 一行 try/except 都不用写。</p>
+
+  <h3><span class="dot"></span>11.3 safe_* 安全包装：把吞错降级收敛到 service 层（2026-08-30 新增）</h3>
+  <p>重构前，chat.py 的 event_gen 里散落着三段 try/except（记忆召回、偏好落库、后台维护），每段都是"吞错 + 告警日志 + 降级"。重构把它们收敛为三个显式契约：</p>
+  <pre class="code" data-lang="python" data-file="backend/app/services/memory_service.py · L421–474"><code># ===== 聊天编排用的安全包装（吞错降级语义集中在此，chat.py 只负责发事件）=====
+
+async def safe_build_context(*, session_id, file_id, query) -> dict:
+    """构建记忆上下文；任何失败都降级为空上下文并记录告警（不阻断问答）。"""
+    try:
+        return await build_memory_context(session_id=session_id, file_id=file_id, query=query)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("chat.memory_context_failed", session_id=session_id, error=str(exc)[:200])
+        return {}                                     # 降级为"无记忆"，而不是让问答失败
+
+async def safe_upsert_preference(preference_update: dict, source_message_id: int | None) -> bool:
+    """持久化用户偏好；失败仅记录告警并返回 False（不阻断问答）。"""
+    try:
+        await upsert_preference(preference_update, source_message_id=source_message_id)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("chat.preference_update_failed", error=str(exc)[:200])
+        return False                                  # 成败变成显式布尔，驱动上层是否发事件
+
+async def maintain_conversation_memory_safe(*, session_id, file_id, user_text,
+                                            assistant_text, assistant_message_id,
+                                            preference_update) -> None:
+    """带超时与吞错的会话记忆维护；作为后台任务体运行。"""
+    try:
+        result = await asyncio.wait_for(
+            maintain_conversation_memory(...), timeout=settings.memory_task_timeout)
+        log.info("chat.memory_updated", ...)
+    except asyncio.CancelledError:
+        raise                                         # 取消必须上抛：后台任务被终止不是"可忽略的失败"
+    except Exception as exc:  # noqa: BLE001
+        log.warning("chat.memory_update_failed", session_id=session_id, error=str(exc)[:200])</code></pre>
+  <div class="callout why"><span class="tag">🎯 为什么把吞错搬进 service 层</span>
+  <ul>
+    <li><b>编排层瘦身</b>：event_gen 是全项目最长的函数，三段 try/except 拆走后，主流程"记忆 → 改写 → 图 → 落库"一目了然。</li>
+    <li><b>降级语义只有一份定义</b>：将来改降级策略（比如空上下文时重试一次）只动一个文件，不会出现"chat.py 和 service 各降各的"。</li>
+    <li><b>成败成为显式契约</b>：<code>safe_upsert_preference</code> 返回布尔值，<code>preference_persisted</code> 直接决定是否发 <code>memory_updated</code> 事件——比用异常控制流清晰得多。</li>
+    <li><b>唯一的例外是 CancelledError</b>：<code>maintain_conversation_memory_safe</code> 单独把它 re-raise——进程退出/任务取消不该被吞成一条 warning，否则取消语义悄悄失效。这是 Python 异步吞错的标准注意点。</li>
+  </ul></div>
+
+  <div class="callout why"><span class="tag">🎯 为什么偏好要"立即落库"</span>
+  <p>对比：普通记忆可以等后台，但用户刚说完"别再贴原文了"，如果下一轮还贴，用户会认为系统没听懂。所以 chat.py:256-266 在本轮请求内同步调用 <code>safe_upsert_preference</code>（成败由返回值表达），下一轮 retrieve_memories 就把它全量带出——闭环一回合内完成。</p></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>记忆 = 摘要（省 token）+ 三层记忆（跨轮连贯）；偏好是"一等公民"永远注入；写入在后台、失败可容忍——且吞错降级收敛在 service 层的 safe_* 包装里。最后一章支线：评测——它让你敢改上面的一切。</p></div>
+</section>
+
+<!-- ============ 第 12 章 ============ -->
+<section class="chapter" id="ch12">
+  <div class="ch-head"><div class="ch-num">12</div><h2>评测体系：让每一次改进可被证明</h2></div>
+  <p class="ch-lead">新概念：Recall / MRR / nDCG、preparation cache、LLM-as-judge、配对 bootstrap。</p>
+
+  <div class="callout concept"><span class="tag">💡 为什么 RAG 必须配评测</span>
+  <p>RAG 的每个环节（分块、embedding、融合、重排、prompt）改动都可能"感觉更好、实际更差"。没有数字，调优就是玄学。本项目建了三套互补的评测：</p></div>
+  <div class="tbl-wrap"><table>
+    <tr><th>评测</th><th>回答的问题</th><th>脚本</th></tr>
+    <tr><td>检索评测（Recall/MRR/nDCG）</td><td>金标片段有没有被召回、排多前</td><td><code>scripts/run_rag_eval.py</code>、<code>evaluate_rag_recall.py</code></td></tr>
+    <tr><td>答案评测（LLM-as-judge）</td><td>最终答案是否忠实、完整、引用正确</td><td><code>scripts/evaluate_agent_answer.py</code></td></tr>
+    <tr><td>专项 spike</td><td>单一假设的快速验证（如 BM25 值不值）</td><td><code>scripts/bm25_spike.py</code> 等</td></tr>
+  </table></div>
+
+  <h3><span class="dot"></span>12.1 检索指标：Recall / MRR / nDCG</h3>
+  <p>金标（gold）= 人工标注的"这个问题应该命中哪些 (chapter_no, chunk_no)"。run_rag_eval.py:26-39 是全部指标的实现，逐行看：</p>
+  <pre class="code" data-lang="python" data-file="backend/scripts/run_rag_eval.py · L26–39"><code>def _dcg(relevances: list[int]) -> float:
+    # DCG：位置越靠前权重越大（log2 折扣），命中得 1 分
+    return sum(value / math.log2(index + 2) for index, value in enumerate(relevances))
+
+def _case_metrics(retrieved, relevant, k):
+    top = retrieved[:k]
+    flags = [1 if _key(item) in relevant else 0 for item in top]  # Top-K 里逐条对金标
+    hits = sum(flags)
+    recall = hits / len(relevant)                  # 召回率：金标被找到的比例
+    precision = hits / k                           # 精确率：Top-K 里有多少是对的
+    reciprocal_rank = next((1.0 / (index + 1) for index, value in enumerate(flags) if value), 0.0)
+    # MRR：第一个命中的排名倒数；排第 1 得 1.0，排第 3 得 0.33，全没中得 0
+    ideal = [1] * min(len(relevant), k)            # 理想排序（全部命中且靠前）
+    ndcg = _dcg(flags) / _dcg(ideal) if ideal else 0.0   # nDCG：实际 DCG / 理想 DCG
+    return {"recall": recall, "precision": precision, "mrr": reciprocal_rank, "ndcg": ndcg, ...}</code></pre>
+  <p>四个指标各有分工：Recall 看"有没有"、MRR 看"第一个对的排多前"、nDCG 综合看"整体排序质量"、no_result_rate 看"彻底空手"的比例。防呆设计（L48-55）：验收要求至少 40 条 validated=true 的人工标注，不满足直接拒绝运行——没有这条，"20 条样本跑出 +5%"的噪声结论会反复误导决策。</p>
+
+  <h3><span class="dot"></span>12.2 冻结变量：preparation cache</h3>
+  <p>A/B 对比最怕"变量不齐"：改了融合算法，但 LLM 改写结果也变了，你怎么知道是算法的功劳？evaluate_rag_recall.py:54-113 引入 <b>preparation cache</b>：把 Query Preparation 的输出按题固化成 JSON 快照，实验时校验快照与数据集、file_id、原文哈希完全一致才允许复用——<b>LLM 成为常量，只比较检索侧变量</b>。这是所有 LLM 应用做对照实验的通用技巧。</p>
+
+  <h3><span class="dot"></span>12.3 答案侧：LLM-as-judge + 引用落地校验</h3>
+  <pre class="code" data-lang="python" data-file="backend/scripts/evaluate_agent_answer.py · L101–130"><code>def citation_metrics(answer, sources, gold_chunks):
+    """unknown_citations = 引用了不存在的 S#（幻觉引用）；
+       gold_citation_rate = 引用中指向金标片段的比例。"""
+    citations = extract_citations(answer)          # 正则抽出答案里的 [S#]
+    unknown = [c for c in citations if c not in evidence_ids]
+    for citation in citations:
+        source = by_id.get(citation)
+        if not source or source.get("neighbor"):
+            continue                               # 邻居片段是上下文补充，不算证据命中
+        if (source.get("chapter_no"), source.get("chunk_no")) in gold_keys:
+            gold_hits += 1</code></pre>
+  <pre class="code" data-lang="python" data-file="backend/scripts/evaluate_agent_answer.py · L49–63"><code>class JudgeVerdict(BaseModel):
+    """LLM-as-judge 的严格 JSON 结构（1~5 分制）。"""
+    faithfulness: int        # 忠实性：是否只基于证据
+    completeness: int        # 完整性：要点是否齐全
+    relevance: int           # 相关性
+    citation_support: int    # 引用支撑
+    @field_validator("faithfulness", ...)
+    @classmethod
+    def _clamp(cls, value: int) -> int:
+        return max(1, min(5, int(value)))      # 分数硬钳到 1~5，模型打 99 分也没用</code></pre>
+  <p>诚实的局限声明也写在 docstring 里：judge 与被评对象同模型有自评偏差、n=20 结论看置信区间。A/B 差值全部带<b>配对 bootstrap 95% CI</b>（对同一批题两策略的差值做有放回重采样，估计差值的置信区间）——点值好看不算数，区间不含 0 才算。</p>
+
+  <div class="callout case"><span class="tag">🔴 评测驱动的真实案例</span>
+  <p>这个仓库的许多关键决策都有评测背书，注释里随处可见：</p>
+  <ul>
+    <li><b>BM25 上位</b>（docker-compose.yml:3-6）：spike 实测候选召回 0.575 &gt; ILIKE 0.525、延迟好约 90 倍 → 换 ParadeDB 镜像并默认开启。</li>
+    <li><b>reranker 双重 sigmoid 修复</b>（rerank.py:88-94）：健全性测试确认新版输出恒在 [0,1]，再套 sigmoid 是双重压缩 → 只在越界时归一。</li>
+    <li><b>章节内二级检索下架</b>（core/retrieval/context.py:49-73）：A/B 全指标负收益 + 根因分析 → 默认关闭，数据留档。</li>
+    <li><b>weighted 融合模式</b>（rag.py:300-306）：评测定位瓶颈在池内排序 → 新模式让相关度参与排序。</li>
+  </ul></div>
+
+  <div class="callout sum"><span class="tag">✅ 本章小结</span>
+  <p>评测文化是这个项目最硬的软实力——金标、指标、冻结变量、bootstrap CI、负结果留档。改任何一环之前，先问"评测会说什么"。</p></div>
+
+  <details class="quiz"><summary><span class="q">自测</span>为什么 A/B 实验要冻结 Query Preparation 的输出？</summary>
+    <div class="ans">LLM 改写有随机性：每次跑题库，standalone_query / retrieval_query 都可能不同。如果不冻结，"融合算法 A vs B"的对比里混入了"改写结果不同"这个变量，差异无法归因。把改写输出固化为快照并校验一致性后，LLM 成为常量，唯一变量就是被测的检索侧改动。</div>
+  </details>
+</section>
+
+<!-- ============ 第 13 章 ============ -->
+<section class="chapter" id="ch13">
+  <div class="ch-head"><div class="ch-num">13</div><h2>端到端执行链路演示</h2></div>
+  <p class="ch-lead">场景：用户登录后选择《西游记》，在输入框敲下"孙悟空为什么三打白骨精后被赶走？"（策略 auto，问题超过 32 字 → 复杂）。点击按钮逐步播放。</p>
+
+  <div class="stepper" id="stepper">
+    <div class="bar">
+      <span class="cnt" id="stCnt">步骤 1 / 17</span>
+      <div class="ctrl">
+        <button id="stPrev" title="上一步（←）">←</button>
+        <button id="stNext" title="下一步（→）">→</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="stage" id="stStage"></div>
+      <div class="title" id="stTitle"></div>
+      <div class="detail" id="stDetail"></div>
+      <div class="refs" id="stRefs"></div>
+    </div>
+    <div class="dots" id="stDots"></div>
+  </div>
+
+  <div class="callout sum"><span class="tag">✅ 全景数字</span>
+  <p>一条请求 ≈ 7~8 次 LLM 调用（改写 1 + 拆分 1 + 专家 4~5 + 汇总 1）、一次混合检索、一次重排、两次记忆 LLM（后台）。每一步都有超时、降级与事件可观测。</p></div>
+</section>
+
+<!-- ============ 第 14 章 ============ -->
+<section class="chapter" id="ch14">
+  <div class="ch-head"><div class="ch-num">14</div><h2>术语表</h2></div>
+  <p class="ch-lead">全书 40+ 个术语速查。输入关键词即可过滤。</p>
+  <input class="gsearch" id="gSearch" type="search" placeholder="🔍 搜索术语或解释，例如：RRF / 租约 / nDCG …">
+  <div class="tbl-wrap"><table id="gTable">
+    <thead><tr><th style="width:210px">术语</th><th>一句话解释</th><th style="width:90px">详见</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</section>
+
+<!-- ============ 附录 ============ -->
+<section class="chapter" id="appendix">
+  <div class="ch-head"><div class="ch-num">A</div><h2>附录：贯穿全书的工程原则</h2></div>
+  <p class="ch-lead">这些原则不是教条，每一条都在源码里有对应的落地位置。第 11 条来自 2026-08-30 重构。</p>
+  <div class="principles" id="principles"></div>
+  <footer>
+    《小说智读》RAG 问答系统源码教程 · 全部内容基于仓库真实源码撰写<br>
+    任何一章想深入，直接打开对应文件——本教程引用的路径和行号就是你的地图。
+  </footer>
+</section>
+
+</div></main>
+</div>
+
+<button class="backtop" id="backTop" title="回到顶部">↑</button>
+
+<script>
+/* ================= 1) 语法高亮 + 行号 ================= */
+(function(){
+  const KW_PY = /\b(?:def|class|return|if|elif|else|for|while|in|not|and|or|try|except|finally|raise|with|as|import|from|async|await|yield|lambda|None|True|False|global|pass|break|continue|assert|del|is)\b/;
+  const KW_TS = /\b(?:const|let|var|function|return|if|else|for|while|new|class|extends|import|export|from|async|await|try|catch|finally|throw|typeof|instanceof|of|in|delete|default|null|undefined|true|false|this)\b/;
+  const KW_SQL = /\b(?:SELECT|FROM|WHERE|ORDER|BY|LIMIT|CREATE|EXTENSION|IF|NOT|EXISTS|INDEX|ON|USING|AND|AS|ASC|DESC)\b/;
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  function tokenize(line, lang){
+    let rules;
+    if(lang==='python') rules=[
+      [/#[^\n]*/g,'com'], [/"""[^\n]*"""|'''[^\n]*'''/g,'str'], [/f?"(?:\\.|[^"\\\n])*"|f?'(?:\\.|[^'\\\n])*'/g,'str'],
+      [/@[\w.]+/g,'dec'], [KW_PY,'kw'], [/\b(?:int|str|float|bool|list|dict|set|tuple|self|Any)\b/,'type'],
+      [/\b\d+(?:\.\d+)?\b/g,'num'], [/\b[A-Za-z_]\w*(?=\()/g,'fn'],
+    ];
+    else if(lang==='ts'||lang==='js') rules=[
+      [/\/\/[^\n]*/g,'com'], [/'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g,'str'],
+      [KW_TS,'kw'], [/\b(?:string|number|boolean|any|void)\b/,'type'],
+      [/\b\d+(?:\.\d+)?\b/g,'num'], [/\b[A-Za-z_$][\w$]*(?=\()/g,'fn'],
+    ];
+    else if(lang==='sql') rules=[
+      [/--[^\n]*/g,'com'], [/'(?:''|[^'\n])*'/g,'str'], [KW_SQL,'kw'], [/\b\d+\b/g,'num'],
+    ];
+    else return esc(line);
+    // 单遍扫描：按位置取最早匹配
+    let out='', i=0;
+    const compiled = rules.map(([re,cls])=>[new RegExp(re.source, re.flags.includes('g')?re.flags:re.flags+'g'), cls]);
+    while(i<line.length){
+      let best=null;
+      for(const [re,cls] of compiled){
+        re.lastIndex=i;
+        const m=re.exec(line);
+        if(m && m.index===i){ if(!best||m[0].length>best.m[0].length) best={m,cls}; break; }
+      }
+      if(best){
+        out+='<span class="tk-'+best.cls+'">'+esc(best.m[0])+'</span>';
+        i+=best.m[0].length;
+      } else { out+=esc(line[i]); i++; }
+    }
+    return out;
+  }
+
+  document.querySelectorAll('pre.code').forEach(pre=>{
+    const code=pre.querySelector('code'); if(!code) return;
+    const lang=pre.dataset.lang||'text';
+    const lines=code.textContent.replace(/\r/g,'').replace(/\n$/,'').split('\n');
+    let inDoc=false;   // 状态机：跨行 docstring 的行整行按字符串着色
+    const html=lines.map((raw,idx)=>{
+      const q=(raw.match(/"""/g)||[]).length;
+      let body;
+      if(inDoc){ body='<span class="tk-str">'+esc(raw)+'</span>'; if(q%2===1) inDoc=false; }
+      else if(q===1){ body='<span class="tk-str">'+esc(raw)+'</span>'; inDoc=true; }
+      else body=tokenize(raw,lang);
+      return '<span class="ln" data-n="'+(idx+1)+'">'+body+'</span>';
+    }).join('');
+    code.innerHTML=html;
+    // 头栏：文件路径 + 语言徽标 + 复制按钮
+    const hd=document.createElement('div'); hd.className='hd';
+    hd.innerHTML='<span class="file">'+(pre.dataset.file||'')+'</span><span class="lang">'+lang+'</span>';
+    const cp=document.createElement('button'); cp.className='copy'; cp.textContent='复制';
+    cp.onclick=()=>{ if(navigator.clipboard) navigator.clipboard.writeText(code.textContent)
+        .then(()=>{cp.textContent='已复制';setTimeout(()=>cp.textContent='复制',1400);}); };
+    hd.appendChild(cp);
+    pre.insertBefore(hd,pre.firstChild);
+  });
+})();
+
+/* ================= 2) 进度条 / 回到顶部 / 滚动定位 ================= */
+(function(){
+  const bar=document.getElementById('progress'), bt=document.getElementById('backTop');
+  function onScroll(){
+    const h=document.documentElement;
+    const p=h.scrollTop/(h.scrollHeight-h.clientHeight||1);
+    bar.style.width=(p*100).toFixed(2)+'%';
+    bt.classList.toggle('show', h.scrollTop>600);
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+  bt.onclick=()=>scrollTo({top:0,behavior:'smooth'});
+})();
+
+/* ================= 3) Scrollspy：目录高亮 + 顶栏章节名 ================= */
+(function(){
+  const links=[...document.querySelectorAll('nav.toc a')];
+  const map={}; links.forEach(a=>{ map[a.getAttribute('href').slice(1)]=a; });
+  const crumb=document.getElementById('crumb');
+  const io=new IntersectionObserver(es=>{
+    es.forEach(e=>{ if(e.isIntersecting){
+      links.forEach(a=>a.classList.remove('active'));
+      const a=map[e.target.id]; if(a){ a.classList.add('active');
+        crumb.textContent=a.textContent.replace(/^\d+\s*/,'').trim();
+        document.body.classList.remove('toc-open'); }
+    }});
+  },{rootMargin:'-15% 0px -70% 0px'});
+  document.querySelectorAll('section.chapter, section.hero').forEach(s=>io.observe(s));
+})();
+document.getElementById('tocToggle').onclick=()=>document.body.classList.toggle('toc-open');
+
+/* ================= 4) 主题切换 ================= */
+(function(){
+  const btn=document.getElementById('themeBtn');
+  const saved=localStorage.getItem('tutorial-theme');
+  if(saved==='dark'){ document.documentElement.dataset.theme='dark'; btn.textContent='☀️ 亮色'; }
+  else if(!saved && matchMedia('(prefers-color-scheme: dark)').matches){
+    document.documentElement.dataset.theme='dark'; btn.textContent='☀️ 亮色';
+  }
+  btn.onclick=()=>{
+    const dark=document.documentElement.dataset.theme==='dark';
+    document.documentElement.dataset.theme=dark?'':'dark';
+    btn.textContent=dark?'🌙 暗色':'☀️ 亮色';
+    localStorage.setItem('tutorial-theme',dark?'light':'dark');
+  };
+})();
+
+/* ================= 5) 端到端演示器 ================= */
+(function(){
+  const STEPS=[
+    {stage:"前端",title:"输入与发起",detail:"ChatPanel.send() → client.ts streamChat() 以 POST /api/chat 发起请求，携带 JWT、session_id、file_id，等待 SSE 流。",refs:"frontend/src/components/ChatPanel.vue · client.ts"},
+    {stage:"后端中间件",title:"鉴权与用户注入",detail:"AuthMiddleware 解 JWT、查 users 表确认用户活跃 → set_current_user('u_xxx') 写入 ContextVar，后续所有 SQL 都据此过滤。",refs:"backend/app/main.py · core/context.py"},
+    {stage:"API 入口",title:"地基校验",detail:"确认该书\"可见\"（自己的书或系统默认书，visible_user_filter）且 status=indexed；校验会话绑定（一场对话只聊一本书）；读取本会话历史消息转成 LangChain 消息。",refs:"backend/app/api/chat.py L163–196"},
+    {stage:"记忆",title:"召回记忆上下文",detail:"safe_build_context → 会话摘要 + 用户偏好（全量，不做相似度过滤）+ 相关记忆（向量排序）；失败自动降级为空上下文，不阻断问答。",refs:"backend/app/services/memory_service.py L197–245 · L424–432"},
+    {stage:"Query Preparation",title:"一次 LLM 调用：改写 + 路由 + 偏好",detail:"输出 standalone_query='孙悟空为什么三打白骨精后被唐僧赶走'、retrieval_query='孙悟空 三打白骨精 被赶走 原因'、intent=plot_causality、needs_retrieval=true，并通过三道校验。",refs:"backend/app/core/query_rewriter.py L390–445"},
+    {stage:"LangGraph",title:"进入状态图",detail:"stream_agent_question 启动图任务（asyncio.create_task），事件经 asyncio.Queue 桥接给 SSE。",refs:"backend/app/agent/runtime.py L762–814"},
+    {stage:"route 节点",title:"策略路由",detail:"is_complex_query 为真（长度 ≥ 32）→ strategy=multi_expert，allowed_tools=('retrieve_novel','get_chapter_context')；发出 route 事件。",refs:"agent/router.py L152–214"},
+    {stage:"plan 节点",title:"生成执行计划",detail:"五步计划（检索 → 拆分 → 并发分析 → 校验 → 汇总）发 plan 事件 → 条件边进入 retrieve。",refs:"agent/runtime.py L147–167"},
+    {stage:"retrieve 节点",title:"混合检索（只跑一次）",detail:"问题向量化 → _vector_search（HNSW Top-60，候选池含系统租户）+ _bm25_search（jieba 分词后 BM25 Top-60）→ RRF 融合 → 补分数元数据 → cross-encoder 重排 + 保护名额 → Top-8 主命中 → 邻居扩展 → 编号 [S1]~[Sn]，发 observation + sources 事件。",refs:"core/rag.py L131–323（门面） · core/retrieval/channels.py · fusion.py · core/rerank.py"},
+    {stage:"dispatch 节点",title:"拆分四个专家任务",detail:"Dispatcher LLM 把问题拆成 character/plot/timeline/locator 四个互斥子任务，3-gram 相似度 < 0.82 校验通过；失败回退固定模板。发 expert_tasks 事件。",refs:"agent/dispatcher.py · agent/contracts.py"},
+    {stage:"experts 节点",title:"四专家并发分析",detail:"asyncio.wait 统一 45s 超时；每个专家的 tool_token 事件实时滚动到前端\"调用过程\"卡片；单个失败只影响自己。",refs:"agent/runtime.py L269–424"},
+    {stage:"validate 节点",title:"契约与重复度校验",detail:"逐份报告检查 required_groups / [S#] 引用 / 长度；两两计算 3-gram Jaccard。假设时间线专家报告过短 → refine_agents=['timeline']，发 validation 事件。",refs:"agent/validation.py L31–109"},
+    {stage:"refine 节点",title:"一次纠偏（条件边）",detail:"只重跑被标记的时间线专家一次（提示词附带校验结果与旧报告），重校验；再不合格则标记 invalid 丢弃。",refs:"agent/runtime.py L452–498"},
+    {stage:"supervisor 节点",title:"内部汇总准备",detail:"过滤无效报告，组装 synthesis_context = 问题 + 共享证据 + 合格报告 + 会话摘要 + 记忆。",refs:"agent/runtime.py L567–599"},
+    {stage:"summary 节点",title:"流式生成最终答案",detail:"逐 token 发 token 事件；答案带 [S3][S7] 引用；_sanitize_summary 按用户偏好净化（summary_only 则截断长引语），如有改动发 token_replace；最后发 meta 事件（经 chat.py 转发，前端 onMeta 依赖它）。",refs:"agent/runtime.py L602–715 · api/chat.py L310–322"},
+    {stage:"API 收尾",title:"落库与后台记忆更新",detail:"_persist_message 保存用户消息和带 sources 的助手消息；asyncio.create_task 启动 maintain_conversation_memory_safe（抽取记忆 + 滚动摘要，30s 超时吞错）；发 done。",refs:"api/chat.py L345–363 · memory_service.py L443–474"},
+    {stage:"前端渲染",title:"打字机与引用面板",detail:"onToken 累加渲染（50ms 节流），引用折叠面板展示\"第 27 回 · 片段 143 · 重排分 0.87\"，onDone 结束。",refs:"frontend/src/components/ChatPanel.vue L215–356"},
+  ];
+  const el=i=>document.getElementById(i);
+  const dots=el('stDots');
+  STEPS.forEach((_,i)=>{const b=document.createElement('button');b.onclick=()=>show(i);dots.appendChild(b);});
+  let cur=0;
+  function show(i){
+    cur=Math.max(0,Math.min(STEPS.length-1,i));
+    const s=STEPS[cur];
+    el('stCnt').textContent='步骤 '+(cur+1)+' / '+STEPS.length;
+    el('stStage').textContent=s.stage;
+    el('stTitle').textContent=(cur+1)+'. '+s.title;
+    el('stDetail').textContent=s.detail;
+    el('stRefs').textContent='📎 '+s.refs;
+    el('stPrev').disabled=cur===0; el('stNext').disabled=cur===STEPS.length-1;
+    [...dots.children].forEach((b,j)=>{b.className=j===cur?'on':(j<cur?'done':'');});
+  }
+  el('stPrev').onclick=()=>show(cur-1);
+  el('stNext').onclick=()=>show(cur+1);
+  addEventListener('keydown',e=>{
+    if(e.target.tagName==='INPUT')return;
+    const r=document.getElementById('ch13').getBoundingClientRect();
+    if(r.top<innerHeight&&r.bottom>0){ if(e.key==='ArrowRight')show(cur+1); if(e.key==='ArrowLeft')show(cur-1); }
+  });
+  show(0);
+})();
+
+/* ================= 6) 术语表 ================= */
+(function(){
+  const G=[
+    ["RAG","检索增强生成：先检索原文再让模型作答，附引用","第 0 章"],
+    ["embedding / 向量","把文本映射成固定长度的数字串，语义相近则向量相近","第 2 章"],
+    ["余弦距离 / 相似度","向量夹角的度量；score = 1 − distance","第 4 章"],
+    ["pgvector","PostgreSQL 的向量扩展，支持 vector 列与相似度排序","第 2 章"],
+    ["HNSW","向量近似最近邻的图索引，牺牲少量召回换数量级提速","第 2 章"],
+    ["GIN 索引","倒排索引，加速 tsvector 全文匹配与 trigram 相似度","第 2 章"],
+    ["tsvector / 生成列","全文检索词袋列；由 content 自动计算并持久化","第 2 章"],
+    ["chunk / 分块","把长文切成几百字的检索单元，带章节/序号元数据","第 3 章"],
+    ["RecursiveCharacterTextSplitter","LangChain 分块器：按段落→句→字递归细化","第 3 章"],
+    ["状态机 / 租约","后台任务的阶段记录；租约防止两个进程同时索引一本书","第 3 章"],
+    ["原子替换","新向量全部备好后单事务\"删旧+插新\"，失败不损旧索引","第 3 章"],
+    ["ContextVar","异步请求级上下文，让\"当前用户\"隐式贯穿全链路","第 4 章"],
+    ["混合检索","向量（语义）+ 词法（字面）两路召回后融合","第 5 章"],
+    ["FTS / pg_trgm / BM25","三种词法通道：全文检索 / 三元组相似 / 概率化相关性打分","第 5 章"],
+    ["RRF","倒数排名融合：只看各通道名次，Σ 1/(60+rank)","第 5 章"],
+    ["min-max 归一 / weighted 融合","池内把分数线性映射到 [0,1] 后加权求和","第 5 章"],
+    ["bi-encoder / cross-encoder","双塔（快、粗）vs 交叉（逐对细读、准、慢）","第 6 章"],
+    ["重排（rerank）","cross-encoder 对候选精修名次，带三路融合与保护名额","第 6 章"],
+    ["邻居扩展","按章节+片段号取主命中前后的块补全上下文","第 6 章"],
+    ["指代消解 / standalone_query","把\"他后来怎么了\"改写成独立可理解的问题","第 7 章"],
+    ["Query Preparation","一次 LLM 调用完成改写+路由+偏好提取，输出强校验","第 7 章"],
+    ["fail-fast / 静默降级","配置错误立刻崩 vs 降级到次优路径——按\"降级后是否仍正确\"选择","第 1/5 章"],
+    ["LangGraph / StateGraph","把 Agent 流程显式建成\"节点+条件边\"的状态图","第 8 章"],
+    ["Agent 策略","direct（直答）/ multi_expert（四专家）/ react / plan_execute","第 8 章"],
+    ["专家契约","每个专家固定的 focus/forbidden/输出格式，供 prompt 与程序校验共用","第 8 章"],
+    ["Jaccard 相似度","集合交并比；本项目用字符 3-gram 检测专家报告重复","第 8 章"],
+    ["工具注册表 / allowed_tools","工具的统一闸门：双重白名单 + 超时 + 异常转结构化结果","第 8 章"],
+    ["SSE","服务器单向推送：不结束的 HTTP 响应，事件以空行分隔","第 9 章"],
+    ["token_replace","后端净化稿整体覆盖已流式渲染内容的补充事件","第 8/9 章"],
+    ["JWT / PBKDF2","无状态登录令牌 / 密码加盐慢哈希","第 9 章"],
+    ["三层记忆","user_preference / novel_fact / session_fact 三种作用域","第 11 章"],
+    ["会话摘要 / covered_message_id","压缩旧对话省 token；水位记录已摘要到哪条","第 11 章"],
+    ["Recall / MRR / nDCG","召回率 / 首命中倒数均值 / 折扣累计增益（排序质量）","第 12 章"],
+    ["LLM-as-judge","用模型按四维给答案打分（1~5，带范围钳制）","第 12 章"],
+    ["配对 bootstrap CI","对 A/B 差值重采样估置信区间，区间不含 0 才算显著","第 12 章"],
+    ["preparation cache","固化 LLM 改写输出做对照实验，让 LLM 成为常量","第 12 章"],
+    ["门面（Facade）","拆模块时保留原导入路径：rag.py re-export 全部旧符号，调用方零改动","第 5 章"],
+    ["系统租户 / 可见性过滤","内置《红楼梦》以 system 用户入库，所有用户只读可见；规则收敛在 visibility.py","第 4 章"],
+    ["safe_* 吞错包装","把 try/except 降级语义收敛到 service 层，编排层只管发事件","第 11 章"],
+  ];
+  const tb=document.querySelector('#gTable tbody');
+  function render(list){
+    tb.innerHTML=list.map(g=>'<tr><td><b>'+g[0]+'</b></td><td>'+g[1]+'</td><td>'+g[2]+'</td></tr>').join('')
+      ||'<tr><td colspan="3" style="color:var(--ink-faint)">没有匹配的术语</td></tr>';
+  }
+  render(G);
+  document.getElementById('gSearch').addEventListener('input',e=>{
+    const q=e.target.value.trim().toLowerCase();
+    render(G.filter(g=>!q||(g[0]+g[1]).toLowerCase().includes(q)));
+  });
+})();
+
+/* ================= 7) 十条原则 ================= */
+(function(){
+  const P=[
+    ["能 fail-fast 的配置错误不在运行时静默","启动即校验维度、overlap、API Key；BM25 缺扩展直接抛。"],
+    ["降级与硬崩的分界线","降级后结果仍正确可接受才降级（pg_trgm→FTS），否则崩（BM25）。"],
+    ["不信任 LLM 输出","结构化输出必过白名单校验，失败走保守回退——宁可多检索不可漏检。"],
+    ["LLM 只建议，代码裁决","章节规则 DSL 由程序验证后才应用；模型不直接改数据。"],
+    ["外部调用必有超时与取消","工具 20s、专家组 45s、请求 240s、SSE 断开取消图任务。"],
+    ["昂贵资源单例 + 预热","embedding/reranker 进程级单例，lifespan 启动预热。"],
+    ["写路径原子化","向量替换单事务；先备料后切换，失败不损旧数据。"],
+    ["多租户隔离在 SQL 层强制","四个检索通道共用 _apply_filters，ContextVar 注入；可见性规则收敛在 visibility.py。"],
+    ["一切改进评测先行","spike → A/B → bootstrap CI → 默认值翻转；负结果留档。"],
+    ["流式体验与护栏语义可以兼得","先流式后 token_replace 覆盖。"],
+    ["重构保持行为等价","拆模块保留门面 re-export（rag.py）+ refactor_parity.py 对照校验；拆的是文件，不是语义。"],
+  ];
+  document.getElementById('principles').innerHTML=P.map((p,i)=>
+    '<div class="pr"><div class="pn">PRINCIPLE '+(i+1)+'</div><div class="pt">'+p[0]+'</div><div class="pd">'+p[1]+'</div></div>').join('');
+})();
+</script>
+</body>
+</html>
