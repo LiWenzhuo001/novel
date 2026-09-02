@@ -41,17 +41,17 @@ const sourceLocationLabel = (source: SourceItem) => {
   }
   return ''
 }
-// 来源分数不是概率：邻居片段显示上下文补充，其余类型显示明确的分数语义。
+// 来源分数不是概率：邻居片段显示上下文补充；重排分已不对外展示（仅内部评测用），其余类型显示明确的分数语义。
 const sourceScoreLabel = (source: SourceItem) => {
   if (source.neighbor || source.score_type === 'neighbor') return '上下文补充'
   if (source.score == null) return ''
   if (!source.score_type) return `${(source.score * 100).toFixed(0)}%`
-  const value = source.score.toFixed(2)
-  const labels: Record<Exclude<NonNullable<SourceItem['score_type']>, 'neighbor'>, string> = {
+  if (source.score_type === 'reranker') return ''
+const value = source.score.toFixed(2)
+  const labels: Record<Exclude<NonNullable<SourceItem['score_type']>, 'neighbor' | 'reranker'>, string> = {
     vector: '向量分',
     fts: '词法分',
     hybrid: '混合相关分',
-    reranker: '重排分',
   }
   return `${labels[source.score_type]} ${value}`
 }
