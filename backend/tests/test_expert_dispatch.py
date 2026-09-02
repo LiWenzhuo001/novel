@@ -53,6 +53,14 @@ def test_locator_contract_rejects_report_without_location():
     assert any("定位" in item or "章节" in item for item in result["missing_sections"])
 
 
+def test_character_contract_accepts_evidence_insufficient_variants():
+    base = "人物关系与双方立场发生明显变化，从亲密走向疏离；人物动机与关系变化阶段结合梳理；事实与推断分开说明，{extra}处标注证据缺口 [S1]"
+    for extra in ("材料不足", "信息不足"):
+        result = validate_report("character", base.format(extra=extra))
+        assert result["contract_ok"] is True, extra
+        assert not result["missing_sections"], extra
+
+
 def test_similarity_detection_selects_lower_contract_report():
     shared = "关系与立场发生变化，事实与推断分开，人物动机证据不足 [S1]"
     reports = [
