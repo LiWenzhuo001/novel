@@ -10,7 +10,7 @@ from pathlib import Path
 
 from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader
 from langchain_core.documents import Document
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.config import settings
 from app.core.context import get_current_user
@@ -18,7 +18,7 @@ from app.core.logging_config import get_logger
 from app.core.metrics import metrics
 from app.core.rag import delete_by_file_id, replace_documents
 from app.db import AsyncSessionLocal
-from app.db.models import KnowledgeFile
+from app.db.models import ChatSession, KnowledgeFile
 from app.services.chapter_detection import (
     ChapterDetectionError,
     ValidatedChapterRule,
@@ -648,6 +648,9 @@ async def delete_file(file_id: str) -> bool:
         if not record:
             return False
         await delete_by_file_id(file_id, user_id=owner)
+        # 书没了，名下会话必悬挂：按 file_id 清会话（消息/记忆/摘要由外键级联清理）。
+        # 不限 user_id：管理员删除系统书时需连带清理所有用户在该书上的会话。
+        await session.execute(delete(ChatSession).where(ChatSession.file_id == file_id))
         for path in RAW_DIR.glob(f"{file_id}.*"):
             try:
                 path.unlink(missing_ok=True)

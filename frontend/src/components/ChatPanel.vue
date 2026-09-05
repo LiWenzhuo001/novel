@@ -168,8 +168,11 @@ const updateRendered = (index: number, immediate = false) => {
 }
 
 // 会话创建使用 Promise 复用，防止初始化期间重复创建会话。
-const ensureSession = () => {
-  if (sessionPromise) return sessionPromise
+// createIfMissing=false（挂载时）只加载已有会话：新建对话采用懒创建，
+// 首条消息发出时才真正落库，避免产生空会话孤儿。
+const ensureSession = (createIfMissing = false) => {
+  if (sessionPromise && (!createIfMissing || sessionId.value)) return sessionPromise
+  if (createIfMissing && !sessionId.value) sessionPromise = null
   sessionLoading.value = true
   sessionError.value = ''
   sessionPromise = (async () => {
@@ -178,23 +181,25 @@ const ensureSession = () => {
       sessionId.value = saved
       try {
         const { data } = await getMessages(saved)
-        if (data?.length) {
-          messages.value = data.map((m: any) => ({
-            role: m.role,
-            content: m.content,
-            sources: m.sources || [],
-            rendered: renderMd(m.content),
-          }))
-          return
-        }
+        messages.value = (data || []).map((m: any) => ({
+          role: m.role,
+          content: m.content,
+          sources: m.sources || [],
+          rendered: renderMd(m.content),
+        }))
+        // 空会话同样复用：落穿新建会在多会话场景持续制造孤儿。
+        return
       } catch {
         localStorage.removeItem(STORAGE_KEY)
+        sessionId.value = ''
       }
     }
+    if (!createIfMissing) return
     if (!props.fileId) throw new Error('请先选择要咨询的小说')
     const { data } = await createSession(props.fileId)
     sessionId.value = data.id
     localStorage.setItem(STORAGE_KEY, data.id)
+    emit('session-created', data.id)
   })()
     .catch((error: any) => {
       sessionError.value = error?.message || '会话初始化失败，请重试'
@@ -211,12 +216,15 @@ const retrySession = () => {
   void ensureSession().catch(() => undefined)
 }
 
+// 新会话落地（自动创建或后端补发）时通知父组件刷新会话列表。
+const emit = defineEmits<{ (e: 'session-created', id: string): void }>()
+
 // 发起一次聊天并将 route、专家任务、工具事件、来源和最终 token 写入同一条消息。
 const send = async () => {
   const text = inputText.value.trim()
   if (!text || streaming.value) return
   try {
-    await ensureSession()
+    await ensureSession(true)
   } catch {
     return
   }
@@ -247,6 +255,7 @@ const send = async () => {
       onSession: (id) => {
         sessionId.value = id
         localStorage.setItem(STORAGE_KEY, id)
+        emit('session-created', id)
       },
       onMemoryContext: (payload) => {
         messages.value[aiIndex].memoryContext = {
@@ -384,7 +393,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative flex flex-col h-full">
+  <div class="relative flex flex-col h-full min-h-0">
     <!-- ===== 消息流 ===== -->
     <div ref="scroll" class="flex-1 overflow-y-auto scroll-thin" :aria-busy="streaming" aria-live="polite">
       <div class="max-w-3xl mx-auto px-5 sm:px-6 py-8">
@@ -565,7 +574,7 @@ onUnmounted(() => {
     </div>
 
     <!-- ===== 悬浮输入舱 ===== -->
-    <div class="shrink-0 px-3 sm:px-6 pb-3 sm:pb-5 pt-2">
+    <div class="shrink-0 px-3 sm:px-6 pb-4 sm:pb-6 pt-2">
       <div class="max-w-3xl mx-auto">
         <div
           class="flex items-end gap-2 rounded-xl bg-white ring-1 ring-black/[0.09] shadow-card pl-4 pr-2 py-2 transition-all duration-200 focus-within:ring-2 focus-within:ring-brand-500/60"

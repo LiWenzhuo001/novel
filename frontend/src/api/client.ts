@@ -66,7 +66,7 @@ export interface AuthData {
 // 统一处理 JSON 请求、认证头、HTTP 错误和 401 跳转。
 async function request<T = any>(
   url: string,
-  method: 'GET' | 'POST' | 'DELETE' | 'PUT' = 'GET',
+  method: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH' = 'GET',
   data?: any,
 ): Promise<ApiResponse<T>> {
   const res = await fetch(BASE + url, {
@@ -181,7 +181,21 @@ export const reindexKB = (id: string) =>
 
 // ---------- 会话 ----------
 export const createSession = (fileId: string) => request(`/chat/sessions?domain=novel&file_id=${encodeURIComponent(fileId)}`, 'POST')
-export const listSessions = () => request<{ id: string; title: string; role: string; file_id?: string | null; updated_at: string }[]>('/chat/sessions')
+export interface SessionItem {
+  id: string
+  title: string
+  role: string
+  domain?: string
+  file_id?: string | null
+  updated_at: string
+}
+export const listSessions = (fileId?: string) => {
+  const query = fileId ? `?file_id=${encodeURIComponent(fileId)}` : ''
+  return request<SessionItem[]>(`/chat/sessions${query}`)
+}
+export const deleteSession = (sessionId: string) => request(`/chat/sessions/${encodeURIComponent(sessionId)}`, 'DELETE')
+export const renameSession = (sessionId: string, title: string) =>
+  request<{ id: string; title: string }>(`/chat/sessions/${encodeURIComponent(sessionId)}`, 'PATCH', { title })
 export const getMessages = (sessionId: string) =>
   request<{ id: number; role: string; content: string; sources: SourceItem[] }[]>(
     `/chat/sessions/${sessionId}/messages`,

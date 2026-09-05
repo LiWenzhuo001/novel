@@ -7,7 +7,7 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Request
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
@@ -111,15 +111,15 @@ async def create_session(domain: str = "novel", file_id: str | None = None):
 
 
 @router.get("/chat/sessions")
-async def list_sessions():
-    """返回当前用户的会话列表。"""
+async def list_sessions(file_id: str | None = None, limit: int = 50):
+    """返回当前用户的会话列表，可按绑定小说过滤。"""
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(ChatSession)
-            .where(ChatSession.user_id == get_current_user())
-            .order_by(ChatSession.updated_at.desc())
-        )
-        rows = result.scalars().all()
+        stmt = select(ChatSession).where(ChatSession.user_id == get_current_user())
+        if file_id:
+            stmt = stmt.where(ChatSession.file_id == file_id)
+        rows = list((await session.execute(
+            stmt.order_by(ChatSession.updated_at.desc()).limit(max(1, min(limit, 200)))
+        )).scalars().all())
     return {"code": 0, "data": [{
         "id": row.id,
         "title": row.title,
@@ -154,6 +154,42 @@ async def get_messages(session_id: str):
         "content": message.content,
         "sources": json.loads(message.sources or "[]"),
     } for message in rows]}
+
+
+@router.patch("/chat/sessions/{session_id}")
+async def rename_session(session_id: str, payload: dict):
+    """重命名当前用户的会话。"""
+    title = str(payload.get("title") or "").strip()[:50]
+    if not title:
+        raise HTTPException(status_code=400, detail="标题不能为空")
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            update(ChatSession)
+            .where(ChatSession.id == session_id, ChatSession.user_id == get_current_user())
+            .values(title=title)
+        )
+        renamed = result.rowcount
+        await session.commit()
+    if not renamed:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"code": 0, "data": {"id": session_id, "title": title}}
+
+
+@router.delete("/chat/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """删除当前用户的会话；消息、会话记忆与会话摘要由外键级联清理。"""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            delete(ChatSession).where(
+                ChatSession.id == session_id,
+                ChatSession.user_id == get_current_user(),
+            )
+        )
+        deleted = result.rowcount
+        await session.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"code": 0, "data": {"id": session_id, "deleted": True}}
 
 
 async def _chat_stream_response(req: ChatRequest, request: Request, persist: bool = True):
@@ -194,6 +230,8 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                     user_id=user_id,
                     domain=req.domain,
                     file_id=req.file_id,
+                    # 首条消息自动命名，否则会话列表全是"新对话"无法区分。
+                    title=(req.message.strip() or "新对话")[:30],
                 )
                 session.add(chat_session)
                 await session.commit()
@@ -203,6 +241,9 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                 raise HTTPException(status_code=409, detail="当前会话绑定了另一部小说，请切换会话")
             elif chat_session.file_id is None:
                 chat_session.file_id = req.file_id
+                await session.commit()
+            if chat_session.title == "新对话":
+                chat_session.title = (req.message.strip() or "新对话")[:30]
                 await session.commit()
             # A2: bounded read - rewrite only needs the last query_rewrite_history_messages rows
             # (mirrors Zep bounded-read; raw rows stay forever).
