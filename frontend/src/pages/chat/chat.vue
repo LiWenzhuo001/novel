@@ -56,7 +56,8 @@ const refreshSessions = async () => {
   sessionsLoading.value = true
   try {
     const { data } = await listSessions(selectedFileId.value)
-    sessions.value = data || []
+    // 角色扮演会话只归属「进入小说世界」，不混入主界面的对话历史。
+    sessions.value = (data || []).filter((row) => !(row.personas || []).length)
   } catch {
     sessions.value = []
   } finally {
@@ -271,7 +272,7 @@ onUnmounted(() => {
     <header class="fixed top-0 inset-x-0 h-16 z-30 bg-white/95 backdrop-blur border-b border-black/[0.08] flex items-center justify-between gap-3 px-4 sm:px-6">
       <div class="flex items-center gap-2.5 min-w-0 sm:gap-3">
         <div class="shrink-0 w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center text-white shadow-card">
-          <Icon name="sparkles" :size="17" />
+          <Icon name="book-open" :size="17" />
         </div>
         <div class="min-w-0">
           <p class="font-display text-[15px] font-bold tracking-wide text-ink leading-tight truncate">小说智读</p>
@@ -297,6 +298,15 @@ onUnmounted(() => {
             <span class="hidden sm:inline">{{ item.label }}</span>
           </button>
         </div>
+        <button
+          @click="router.push('/world')"
+          class="btn-primary !rounded-lg px-3 py-1.5 text-xs flex items-center gap-1.5"
+          aria-label="进入小说世界"
+          title="与小说人物对话"
+        >
+          <Icon name="book-open" :size="13" />
+          <span class="hidden sm:inline">进入小说世界</span>
+        </button>
         <button
           ref="kbToggleRef"
           @click="showKB = !showKB"

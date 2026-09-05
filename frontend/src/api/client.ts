@@ -187,6 +187,8 @@ export interface SessionItem {
   role: string
   domain?: string
   file_id?: string | null
+  personas?: string[]
+  chapter_until?: number | null
   updated_at: string
 }
 export const listSessions = (fileId?: string) => {
@@ -196,6 +198,24 @@ export const listSessions = (fileId?: string) => {
 export const deleteSession = (sessionId: string) => request(`/chat/sessions/${encodeURIComponent(sessionId)}`, 'DELETE')
 export const renameSession = (sessionId: string, title: string) =>
   request<{ id: string; title: string }>(`/chat/sessions/${encodeURIComponent(sessionId)}`, 'PATCH', { title })
+
+// ---------- 小说世界（角色扮演） ----------
+export interface CharacterCard {
+  name: string
+  persona: string
+  style: string
+  background: string
+  greeting: string
+}
+export const listWorldCharacters = (fileId: string, chapterUntil?: number) => {
+  const query = new URLSearchParams({ file_id: fileId })
+  if (chapterUntil) query.set('chapter_until', String(chapterUntil))
+  return request<{ characters: string[]; cached: boolean }>(`/chat/world/characters?${query.toString()}`)
+}
+export const selectWorldCharacters = (fileId: string, names: string[], chapterUntil?: number) =>
+  request<{ cards: CharacterCard[]; scenario: string }>('/chat/world/characters/select', 'POST', {
+    file_id: fileId, names, chapter_until: chapterUntil,
+  })
 export const getMessages = (sessionId: string) =>
   request<{ id: number; role: string; content: string; sources: SourceItem[] }[]>(
     `/chat/sessions/${sessionId}/messages`,
@@ -380,12 +400,15 @@ export const streamChat = (
     message: string
     role: string
     domain?: 'novel'
-    strategy?: 'auto' | 'direct' | 'multi_expert' | 'react' | 'plan_execute'
+    strategy?: 'auto' | 'direct' | 'multi_expert' | 'react' | 'plan_execute' | 'roleplay'
     max_steps?: number
     memory_mode?: 'auto' | 'off'
     history?: any[]
     session_id?: string
     file_id?: string
+    personas?: string[]
+    chapter_until?: number
+    [key: string]: any
   },
   handlers: StreamHandlers,
 ) => {

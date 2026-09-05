@@ -122,6 +122,30 @@ class ChatSession(Base):
     user_id = Column(String(64), index=True, default="default")  # 多租户隔离
     domain = Column(String(32), index=True, default="novel", nullable=False)  # novel
     file_id = Column(String(32), index=True)  # 当前会话绑定的小说
+    personas = Column(Text, default="[]")  # 角色扮演：在场人物名 JSON 数组；普通会话为 []
+    chapter_until = Column(Integer, nullable=True)  # 角色扮演：剧情截至章节；NULL=全书
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class NovelCharacter(Base):
+    """「进入小说世界」的人物档案：推荐名册与角色卡共用一张表，kind 区分。
+
+    roster 行（name="__roster__"）缓存 LLM 提取的主要人物名列表；
+    card 行缓存单个角色的角色卡（persona/style/background/greeting 的 JSON）。
+    以 (file_id, chapter_until, source_hash) 为缓存键，重索引后由 source_hash 失效。
+    """
+
+    __tablename__ = "novel_characters"
+
+    id = Column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    user_id = Column(String(64), index=True, nullable=False)
+    file_id = Column(String(32), index=True, nullable=False)
+    name = Column(String(64), index=True, nullable=False)
+    chapter_until = Column(Integer, nullable=True)  # NULL=全书
+    kind = Column(String(16), nullable=False, default="card")  # roster | card
+    content = Column(Text, nullable=False, default="{}")  # JSON
+    source_hash = Column(String(64))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

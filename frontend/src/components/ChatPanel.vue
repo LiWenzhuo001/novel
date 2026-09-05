@@ -14,8 +14,12 @@ const props = withDefaults(defineProps<{
   notice?: string
   sessionKey?: string
   domain?: 'novel'
-  strategy?: 'auto' | 'direct' | 'multi_expert'
+  strategy?: 'auto' | 'direct' | 'multi_expert' | 'react' | 'plan_execute' | 'roleplay'
   fileId?: string | null
+  assistantNames?: string[]
+  placeholder?: string
+  extraPayload?: Record<string, any>
+  openingMessage?: string
 }>(), {
   suggestions: () => [],
   title: '你好，我是你的',
@@ -26,6 +30,10 @@ const props = withDefaults(defineProps<{
   domain: 'novel',
   strategy: 'auto',
   fileId: null,
+  assistantNames: () => [],
+  placeholder: '询问人物关系、情节、时间线或章节位置…',
+  extraPayload: () => ({}),
+  openingMessage: '',
 })
 type ExpertTask = { label?: string; task?: string }
 
@@ -167,6 +175,19 @@ const updateRendered = (index: number, immediate = false) => {
   if (!renderTimer) renderTimer = setTimeout(render, 50)
 }
 
+// 开场消息（如角色扮演的情景旁白+人物开场白）：消息区为空时自动呈现。
+const maybeInsertOpening = () => {
+  if (!messages.value.length && props.openingMessage) {
+    messages.value.push({
+      role: 'assistant',
+      content: props.openingMessage,
+      rendered: renderMd(props.openingMessage),
+      sources: [],
+      tools: [],
+    })
+  }
+}
+
 // 会话创建使用 Promise 复用，防止初始化期间重复创建会话。
 // createIfMissing=false（挂载时）只加载已有会话：新建对话采用懒创建，
 // 首条消息发出时才真正落库，避免产生空会话孤儿。
@@ -188,17 +209,21 @@ const ensureSession = (createIfMissing = false) => {
           rendered: renderMd(m.content),
         }))
         // 空会话同样复用：落穿新建会在多会话场景持续制造孤儿。
+        maybeInsertOpening()
         return
       } catch {
         localStorage.removeItem(STORAGE_KEY)
         sessionId.value = ''
       }
     }
+    // 首次进入（懒创建）：开场消息先呈现，首条用户消息发出时才真正建会话。
+    maybeInsertOpening()
     if (!createIfMissing) return
     if (!props.fileId) throw new Error('请先选择要咨询的小说')
     const { data } = await createSession(props.fileId)
     sessionId.value = data.id
     localStorage.setItem(STORAGE_KEY, data.id)
+    maybeInsertOpening()
     emit('session-created', data.id)
   })()
     .catch((error: any) => {
@@ -240,17 +265,18 @@ const send = async () => {
   const history = messages.value
     .slice(0, -2)
     .map((m) => ({ role: m.role, content: m.content }))
-  controller = streamChat(
-    {
-      message: text,
-      role: props.role,
-      domain: props.domain,
-      strategy: props.strategy,
-      memory_mode: memoryMode.value,
-      history,
-      session_id: sessionId.value,
-      file_id: props.fileId || undefined,
-    },
+    controller = streamChat(
+      {
+        message: text,
+        role: props.role,
+        domain: props.domain,
+        strategy: props.strategy,
+        memory_mode: memoryMode.value,
+        history,
+        session_id: sessionId.value,
+        file_id: props.fileId || undefined,
+        ...(props.extraPayload || {}),
+      },
     {
       onSession: (id) => {
         sessionId.value = id
@@ -452,8 +478,9 @@ onUnmounted(() => {
 
             <!-- AI 消息：编辑式排版 -->
             <div v-else class="max-w-full flex gap-2.5 sm:max-w-[90%] sm:gap-3">
-              <div class="shrink-0 mt-0.5 w-7 h-7 rounded-lg bg-gradient-to-br from-brand-600 to-violet-600 flex items-center justify-center text-white shadow-sm">
-                <Icon name="bot" :size="15" />
+              <div class="shrink-0 mt-0.5 w-7 h-7 rounded-lg bg-gradient-to-br from-brand-600 to-violet-600 flex items-center justify-center text-white shadow-sm" :title="assistantNames.join('、')">
+                <span v-if="assistantNames.length" class="font-display text-[12px] font-bold leading-none">{{ assistantNames[0].slice(0, 1) }}</span>
+                <Icon v-else name="bot" :size="15" />
               </div>
               <div class="min-w-0 flex-1">
                 <div v-if="m.route?.retrieval_skipped" class="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
@@ -585,7 +612,7 @@ onUnmounted(() => {
             v-model="inputText"
             @keyup.enter="send"
             type="text"
-            :placeholder="'询问人物关系、情节、时间线或章节位置…'"
+            :placeholder="placeholder"
             class="flex-1 bg-transparent outline-none text-sm text-ink placeholder:text-ink-faint py-2"
           />
           <button

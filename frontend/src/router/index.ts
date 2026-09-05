@@ -23,6 +23,12 @@ const router = createRouter({
       component: () => import('../pages/memories/memories.vue'),
       meta: { title: '对话记忆', requiresAuth: true },
     },
+    {
+      path: '/world',
+      name: 'world',
+      component: () => import('../pages/world/world.vue'),
+      meta: { title: '进入小说世界', requiresAuth: true },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/chat' },
   ],
 })

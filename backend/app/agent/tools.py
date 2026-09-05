@@ -73,6 +73,7 @@ async def _retrieve_novel(
     retrieval_query: str | None = None,
     file_id: str | None = None,
     neighbor_window: int | None = None,
+    chapter_until: int | None = None,
     **_: Any,
 ) -> ToolResult:
     """调用共享小说 RAG，生成专家和 Supervisor 共用的 evidence 与 sources。"""
@@ -84,6 +85,9 @@ async def _retrieve_novel(
     # 仅在确实存在改写 Query 时传递新参数，兼容旧的工具替身和外部调用方。
     if retrieval_query:
         retrieve_kwargs["retrieval_query"] = retrieval_query
+    # 角色扮演的剧情时间线：人物记忆只召回截至章节及之前的内容。
+    if chapter_until is not None:
+        retrieve_kwargs["chapter_until"] = chapter_until
     docs = await retrieve_novel_context(query, **retrieve_kwargs)
     sources: list[dict[str, Any]] = []
     evidence: list[dict[str, Any]] = []
@@ -117,9 +121,9 @@ async def _retrieve_novel(
     return ToolResult(status="ok", output={"evidence": evidence, "sources": sources}, citations=sources)
 
 
-async def _chapter_context(*, query: str, file_id: str | None = None, **_: Any) -> ToolResult:
+async def _chapter_context(*, query: str, file_id: str | None = None, chapter_until: int | None = None, **_: Any) -> ToolResult:
     """以较大的邻居窗口检索命中章节的前后文。"""
-    return await _retrieve_novel(query=query, file_id=file_id, neighbor_window=2)
+    return await _retrieve_novel(query=query, file_id=file_id, neighbor_window=2, chapter_until=chapter_until)
 
 
 _ALLOWED_OPERATORS = {

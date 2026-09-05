@@ -132,10 +132,13 @@ async def _similarity_search_once(
     query: str, k: int = None, filter_source: str = None,
     domain: str = "novel", file_id: str = None, trace: dict | None = None,
     rerank_query: str | None = None,
+    chapter_until: int | None = None,
 ) -> List[Document]:
     """Hybrid vector/lexical retrieval with optional cross-encoder reranking.
 
     ``trace`` 为可选的内部诊断容器；不传时保持原有返回格式和开销。
+    ``chapter_until`` 在候选池层截断章节（角色扮演的剧情时间线），保证重排与
+    Top-K 名额不被越章内容占用；未分章片段无法判定归属，保守保留。
     """
     k = k or settings.top_k
     metrics.incr("retrieval_calls")
@@ -279,6 +282,13 @@ async def _similarity_search_once(
                 })
                 pool.append(Document(page_content=row.content, metadata=meta))
 
+    # 剧情时间线截断：在重排前按章节过滤候选，越章内容不占用重排与 Top-K 名额。
+    if chapter_until is not None:
+        before = len(pool)
+        pool = [doc for doc in pool if _chapter_within(doc, chapter_until)]
+        if trace is not None:
+            trace["filtered_counts"]["chapter_until"] = before - len(pool)
+
     # 重排只处理召回候选；失败时回退到当前候选顺序，不能阻断问答。
     if trace is not None:
         trace["reranker_candidates"] = _trace_candidates(pool, "reranker")
@@ -344,6 +354,7 @@ async def similarity_search(
     query: str, k: int = None, filter_source: str = None,
     domain: str = "novel", file_id: str = None, trace: dict | None = None,
     retrieval_query: str | None = None,
+    chapter_until: int | None = None,
 ) -> List[Document]:
     """使用合并后的单一 Query 执行一次共享 RAG 检索。"""
     merged_query = build_merged_retrieval_query(query, retrieval_query)
@@ -359,6 +370,7 @@ async def similarity_search(
         trace,
         # Reranker 面向自然问题，不被关键词式检索线索带偏。
         rerank_query=query,
+        chapter_until=chapter_until,
     )
     if trace is not None:
         trace.update({
@@ -387,17 +399,31 @@ async def similarity_search_with_trace(
 async def retrieve_novel_context(
     query: str, k: int = None, neighbor_window: int | None = None, file_id: str = None,
     retrieval_query: str | None = None, user_id: str | None = None,
+    chapter_until: int | None = None,
 ) -> List[Document]:
     """执行一次主检索，按需做章节内二级精排，最后补充邻居片段。
 
     顺序是刻意的：二级精排必须在邻居扩展**之前**完成，否则邻居片段会被二次
     检索的顺序打乱，评测也无法区分“主检索命中”与“上下文扩展”。
+
+    ``chapter_until`` 为角色扮演的剧情时间线锚点：召回与邻居扩展都只保留
+    chapter_no <= chapter_until 的片段（未分章片段无法判定归属，保守保留），
+    最终仍做一次兜底过滤，防止精排/邻居扩展重新引入越章内容。
     """
     k = k or settings.novel_context_k
     primary = await similarity_search(
-        query, k=k, domain="novel", file_id=file_id, retrieval_query=retrieval_query
+        query, k=k, domain="novel", file_id=file_id, retrieval_query=retrieval_query,
+        chapter_until=chapter_until,
     )
     if settings.enable_chapter_local_retrieval and file_id:
         owner = user_id or get_current_user()
         primary = await chapter_local_refine(query, primary, k, file_id, owner)
-    return await expand_novel_context(primary, neighbor_window, user_id)
+    docs = await expand_novel_context(primary, neighbor_window, user_id)
+    if chapter_until is not None:
+        docs = [doc for doc in docs if _chapter_within(doc, chapter_until)]
+    return docs
+
+
+def _chapter_within(doc: Document, chapter_until: int) -> bool:
+    value = doc.metadata.get("chapter_no")
+    return value is None or int(value) <= chapter_until

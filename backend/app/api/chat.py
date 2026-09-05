@@ -19,8 +19,9 @@ from app.core.query_rewriter import rewrite_query
 from app.db import AsyncSessionLocal
 from app.db.models import ChatMessage, ChatSession, KnowledgeFile
 from app.services import memory_service
-from app.models.schemas import ChatRequest
+from app.models.schemas import ChatRequest, WorldSelectRequest
 from app.agent.runtime import stream_agent_question
+from app.services import world_service
 
 log = get_logger("chat")
 router = APIRouter()
@@ -120,12 +121,22 @@ async def list_sessions(file_id: str | None = None, limit: int = 50):
         rows = list((await session.execute(
             stmt.order_by(ChatSession.updated_at.desc()).limit(max(1, min(limit, 200)))
         )).scalars().all())
+    # 角色扮演历史排查用：确认返回的会话是否带人物标记。
+    for row in rows:
+        log.info(
+            "chat.session_listed",
+            session_id=row.id,
+            personas=row.personas,
+            chapter_until=row.chapter_until,
+        )
     return {"code": 0, "data": [{
         "id": row.id,
         "title": row.title,
         "role": row.role,
         "domain": row.domain,
         "file_id": row.file_id,
+        "personas": json.loads(row.personas or "[]") if getattr(row, "personas", None) else [],
+        "chapter_until": row.chapter_until,
         "updated_at": row.updated_at.strftime("%Y-%m-%d %H:%M") if row.updated_at else "",
     } for row in rows]}
 
@@ -175,6 +186,33 @@ async def rename_session(session_id: str, payload: dict):
     return {"code": 0, "data": {"id": session_id, "title": title}}
 
 
+@router.get("/chat/world/characters")
+async def world_characters(file_id: str, chapter_until: int | None = None):
+    """返回小说世界的推荐人物名册（有缓存用缓存，否则 LLM 提取）。"""
+    try:
+        data = await world_service.list_characters(file_id, chapter_until)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except RuntimeError as exc:
+        # 典型：索引由旧 embedding 模型生成，与当前检索配置不兼容。
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"code": 0, "data": data}
+
+
+@router.post("/chat/world/characters/select")
+async def world_select(payload: WorldSelectRequest):
+    """为选中的人物生成或返回角色卡（1~3 个）与开场情景。"""
+    try:
+        result = await world_service.get_character_cards(
+            payload.file_id, payload.names, payload.chapter_until,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"code": 0, "data": result}
+
+
 @router.delete("/chat/sessions/{session_id}")
 async def delete_session(session_id: str):
     """删除当前用户的会话；消息、会话记忆与会话摘要由外键级联清理。"""
@@ -199,6 +237,14 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
 
     session_id = req.session_id or uuid.uuid4().hex
     user_id = get_current_user()
+    # 角色扮演历史排查用：记录请求里的关键路由字段。
+    log.info(
+        "chat.request_fields",
+        session_id=session_id,
+        strategy=req.strategy,
+        personas=req.personas,
+        chapter_until=req.chapter_until,
+    )
 
     if persist:
         async with AsyncSessionLocal() as session:
@@ -232,6 +278,8 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                     file_id=req.file_id,
                     # 首条消息自动命名，否则会话列表全是"新对话"无法区分。
                     title=(req.message.strip() or "新对话")[:30],
+                    personas=json.dumps(req.personas or [], ensure_ascii=False),
+                    chapter_until=req.chapter_until,
                 )
                 session.add(chat_session)
                 await session.commit()
@@ -244,6 +292,12 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                 await session.commit()
             if chat_session.title == "新对话":
                 chat_session.title = (req.message.strip() or "新对话")[:30]
+                await session.commit()
+            # 懒创建路径：create_session 先建了空会话，首条消息到达时在这里补上
+            # 人物与剧情边界（只补一次，避免后续轮次覆盖用户在 /world 的选择）。
+            if req.personas and json.loads(chat_session.personas or "[]") == []:
+                chat_session.personas = json.dumps(req.personas, ensure_ascii=False)
+                chat_session.chapter_until = req.chapter_until
                 await session.commit()
             # A2: bounded read - rewrite only needs the last query_rewrite_history_messages rows
             # (mirrors Zep bounded-read; raw rows stay forever).
@@ -275,6 +329,9 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                     metrics.incr("sse_cancellations")
                     log.info("chat.novel_client_disconnected", session_id=session_id)
                     return
+                if req.strategy == "roleplay":
+                    # 角色扮演不注入长期记忆：普通问答的偏好（如"只给总结"）会污染人设。
+                    req.memory_mode = "off"
                 memory_context: dict = {}
                 if req.memory_mode == "auto" and settings.memory_enabled:
                     memory_context = await memory_service.safe_build_context(
@@ -300,60 +357,110 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                     return
 
                 fallback_reason = ""
-                async for stream_event in stream_agent_question(
-                    rewrite.standalone_query,
-                    req.strategy,
-                    req.file_id,
-                    req.max_steps,
-                    original_query=req.message,
-                    retrieval_query=rewrite.retrieval_query,
-                    query_preparation=rewrite.as_dict(),
-                    memory_context=memory_context,
-                ):
+                if req.strategy == "roleplay":
+                    # 角色扮演：跳过 Query 改写与 RAG 图，走专属管线
+                    # （人物记忆检索 → 人设 prompt → 高温流式生成）。
+                    async for stream_event in world_service.stream_roleplay(
+                        req.file_id, req.personas or [], req.chapter_until,
+                        req.message, history_messages,
+                    ):
+                        if await request.is_disconnected():
+                            metrics.incr("sse_cancellations")
+                            log.info("chat.novel_client_disconnected", session_id=session_id)
+                            return
+                        event_type = stream_event["type"]
+                        payload = stream_event.get("data")
+                        if event_type == "token":
+                            full_reply.append(str(payload or ""))
+                            yield _sse_event("token", payload)
+                        elif event_type in {"tool_start", "tool_end", "meta"}:
+                            if event_type == "meta":
+                                fallback_reason = payload.get("fallback_reason", "")
+                                log.info(
+                                    "chat.agent_finished",
+                                    session_id=session_id,
+                                    strategy=payload.get("strategy", "roleplay"),
+                                    steps=payload.get("steps"),
+                                    personas=payload.get("personas"),
+                                )
+                            yield _sse_event(event_type, payload)
+                else:
+                    rewrite = await rewrite_query(
+                        req.message,
+                        history_messages,
+                        memory_context=memory_context,
+                    )
                     if await request.is_disconnected():
                         metrics.incr("sse_cancellations")
                         log.info("chat.novel_client_disconnected", session_id=session_id)
                         return
 
-                    event_type = stream_event["type"]
-                    payload = stream_event.get("data")
-                    if event_type == "sources":
-                        reply_sources = payload or []
-                        yield _sse_event("sources", reply_sources)
-                    elif event_type in {"route", "plan", "step_start", "observation", "reflection", "expert_tasks", "validation"}:
-                        yield _sse_event(event_type, payload)
-                    elif event_type == "tool_start":
-                        yield _sse_event("tool_start", payload)
-                    elif event_type == "tool_token":
-                        yield _sse_event("tool_token", payload)
-                    elif event_type == "tool_end":
-                        yield _sse_event("tool_end", payload)
-                    elif event_type == "token":
-                        token = str(payload or "")
-                        full_reply.append(token)
-                        yield _sse_event("token", token)
-                    elif event_type == "token_replace":
-                        # 输出护栏净化稿覆盖流式拼接的内容，持久化以净化稿为准。
-                        replaced = str(payload or "")
-                        if replaced:
-                            full_reply.clear()
-                            full_reply.append(replaced)
-                        yield _sse_event("token_replace", replaced)
-                    elif event_type == "error":
-                        yield _sse_event("error", payload)
-                    elif event_type == "meta":
-                        meta = payload or {}
-                        fallback_reason = meta.get("fallback_reason", "")
-                        log.info(
-                            "chat.agent_finished",
-                            session_id=session_id,
-                            strategy=meta.get("strategy", req.strategy or "legacy"),
-                            steps=meta.get("steps"),
-                            fallback_reason=fallback_reason,
+                    preference_update = rewrite.preference_update
+                    if req.memory_mode == "auto" and settings.memory_enabled and preference_update:
+                        preference_persisted = await memory_service.safe_upsert_preference(
+                            preference_update,
+                            source_message_id=user_message_id,
                         )
-                        # meta 必须转发给前端：onMeta 依赖它更新 output_policy 与
-                        # 策略/回退信息（此前只记日志不下发，前端永远收不到）。
-                        yield _sse_event("meta", meta)
+                        if preference_persisted:
+                            yield _sse_event("memory_updated", {
+                                "status": "applied",
+                                "preference_key": preference_update.get("preference_key"),
+                            })
+
+                    async for stream_event in stream_agent_question(
+                        rewrite.standalone_query,
+                        req.strategy,
+                        req.file_id,
+                        req.max_steps,
+                        original_query=req.message,
+                        retrieval_query=rewrite.retrieval_query,
+                        query_preparation=rewrite.as_dict(),
+                        memory_context=memory_context,
+                    ):
+                        if await request.is_disconnected():
+                            metrics.incr("sse_cancellations")
+                            log.info("chat.novel_client_disconnected", session_id=session_id)
+                            return
+
+                        event_type = stream_event["type"]
+                        payload = stream_event.get("data")
+                        if event_type == "sources":
+                            reply_sources = payload or []
+                            yield _sse_event("sources", reply_sources)
+                        elif event_type in {"route", "plan", "step_start", "observation", "reflection", "expert_tasks", "validation"}:
+                            yield _sse_event(event_type, payload)
+                        elif event_type == "tool_start":
+                            yield _sse_event("tool_start", payload)
+                        elif event_type == "tool_token":
+                            yield _sse_event("tool_token", payload)
+                        elif event_type == "tool_end":
+                            yield _sse_event("tool_end", payload)
+                        elif event_type == "token":
+                            token = str(payload or "")
+                            full_reply.append(token)
+                            yield _sse_event("token", token)
+                        elif event_type == "token_replace":
+                            # 输出护栏净化稿覆盖流式拼接的内容，持久化以净化稿为准。
+                            replaced = str(payload or "")
+                            if replaced:
+                                full_reply.clear()
+                                full_reply.append(replaced)
+                            yield _sse_event("token_replace", replaced)
+                        elif event_type == "error":
+                            yield _sse_event("error", payload)
+                        elif event_type == "meta":
+                            meta = payload or {}
+                            fallback_reason = meta.get("fallback_reason", "")
+                            log.info(
+                                "chat.agent_finished",
+                                session_id=session_id,
+                                strategy=meta.get("strategy", req.strategy or "legacy"),
+                                steps=meta.get("steps"),
+                                fallback_reason=fallback_reason,
+                            )
+                            # meta 必须转发给前端：onMeta 依赖它更新 output_policy 与
+                            # 策略/回退信息（此前只记日志不下发，前端永远收不到）。
+                            yield _sse_event("meta", meta)
 
                 log.info(
                     "chat.novel_answered",

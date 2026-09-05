@@ -43,12 +43,23 @@ class ChatRequest(BaseModel):
     message: str
     role: Literal["student"] = "student"
     domain: Literal["novel"] = "novel"
-    strategy: Literal["auto", "direct", "multi_expert", "react", "plan_execute"] = "auto"
+    strategy: Literal["auto", "direct", "multi_expert", "react", "plan_execute", "roleplay"] = "auto"
     max_steps: Optional[int] = Field(default=None, ge=2, le=12)
     memory_mode: Literal["auto", "off"] = "auto"
     history: Optional[List[dict]] = None  # [{"role": "user/assistant", "content": ""}]
     session_id: Optional[str] = None  # 会话 ID，不传则服务端新建
     file_id: Optional[str] = Field(default=None, min_length=1, max_length=32)  # 当前咨询小说
+    personas: Optional[List[str]] = Field(default=None, min_length=1, max_length=3)  # 角色扮演：在场人物（1~3）
+    chapter_until: Optional[int] = Field(default=None, ge=1, le=10000)  # 角色扮演：剧情截至章节；不传=全书
+
+
+class WorldSelectRequest(BaseModel):
+    """「进入小说世界」选中人物后的角色卡生成请求。"""
+    model_config = ConfigDict(extra="forbid")
+
+    file_id: str = Field(min_length=1, max_length=32)
+    names: List[str] = Field(min_length=1, max_length=3)
+    chapter_until: Optional[int] = Field(default=None, ge=1, le=10000)
 
 
 class SourceDoc(BaseModel):
