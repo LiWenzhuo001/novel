@@ -35,7 +35,6 @@ const indexedFiles = computed(() => libraryFiles.value.filter((file) => file.sta
 const selectedFile = computed(() => libraryFiles.value.find((file) => file.id === selectedFileId.value) || null)
 const hasMultipleNovels = computed(() => libraryFiles.value.length > 1)
 const canChat = computed(() => selectedFile.value?.status === 'indexed')
-const selectionRequired = computed(() => hasMultipleNovels.value && !selectedFileId.value)
 const sessionKey = computed(() => `novel_rag_session_id_${selectedFileId.value || 'unselected'}`)
 
 // ===== 同一小说内的多会话管理 =====
@@ -198,8 +197,9 @@ const onFilesChanged = (files: KBFileInfo[]) => {
 }
 
 
-const onNovelSelectChange = (event: Event) => {
-  selectNovel((event.target as HTMLSelectElement).value)
+// 书库点卡选书：复用 selectNovel 的 indexed 校验与切换提示
+const onLibrarySelect = (file: KBFileInfo) => {
+  selectNovel(file.id)
 }
 
 const selectNovel = (fileId: string) => {
@@ -451,42 +451,8 @@ onUnmounted(() => {
         </div>
       </aside>
 
-      <!-- 中间对话：min-h-0 让消息区在内部滚动，选择卡片与输入框固定同屏 -->
+      <!-- 中间对话：min-h-0 让消息区在内部滚动，输入框固定同屏；选书入口在右侧书库 -->
       <main class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
-        <section class="mx-auto w-full max-w-3xl shrink-0 px-5 pt-3 sm:px-6" aria-label="当前咨询小说">
-          <div
-            v-if="hasMultipleNovels || selectedFile"
-            class="rounded-xl border px-4 py-3 shadow-sm"
-            :class="selectionRequired || !canChat ? 'border-amber-200 bg-amber-50' : 'border-brand-100 bg-white'"
-          >
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div class="min-w-0">
-                <p class="text-xs font-semibold text-ink">当前咨询小说</p>
-                <p v-if="selectionRequired" class="mt-1 text-xs leading-5 text-amber-800">
-                  已上传多本小说，请先选择一部作为当前咨询对象，选择前不能开始问答。
-                </p>
-                <p v-else-if="selectedFile && selectedFile.status !== 'indexed'" class="mt-1 text-xs leading-5 text-amber-800">
-                  《{{ selectedFile.filename }}》正在索引或索引失败，请选择其他已完成索引的小说。
-                </p>
-                <p v-else-if="selectedFile" class="mt-1 truncate text-xs text-ink-mute" :title="selectedFile.filename">
-                  后续问答仅基于《{{ selectedFile.filename }}》的原文。
-                </p>
-              </div>
-              <select
-                :value="selectedFileId || ''"
-                class="min-w-0 rounded-lg border border-black/[0.1] bg-white px-3 py-2 text-xs text-ink outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 sm:w-64"
-                aria-label="选择当前咨询小说"
-                @change="onNovelSelectChange"
-              >
-                <option value="" disabled>请选择已索引小说</option>
-                <option v-for="file in indexedFiles" :key="file.id" :value="file.id">
-                  {{ file.filename }}
-                </option>
-              </select>
-            </div>
-          </div>
-        </section>
-
         <ChatPanel
           v-if="canChat"
           :key="`${selectedFileId || 'unselected'}_${sessionEpoch}`"
@@ -500,17 +466,17 @@ onUnmounted(() => {
           title="阅读你的"
           title-suffix="小说"
           subtitle="上传小说文本后，可追问人物关系、情节因果、时间线和章节位置。复杂问题可由人物、情节、时间线和章节定位专家并发分析。"
-          notice="严格基于已索引原文回答 · 关键结论附章节引用"
+          :notice="selectedFile ? `严格基于《${selectedFile.filename}》的原文回答 · 关键结论附章节引用` : '严格基于已索引原文回答 · 关键结论附章节引用'"
           @session-created="onSessionCreated"
         />
         <div v-else class="flex flex-1 items-center justify-center px-6 py-16 text-center">
           <div class="max-w-md rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 px-6 py-8">
             <Icon name="folder-open" :size="28" class="mx-auto text-amber-600" />
             <p class="mt-3 text-sm font-semibold text-ink">
-              {{ hasMultipleNovels ? '请先选择一部小说' : '请先上传并索引小说' }}
+              {{ hasMultipleNovels ? '请在右侧书库中点击一本小说' : '请先上传并索引小说' }}
             </p>
             <p class="mt-2 text-xs leading-5 text-ink-mute">
-              {{ hasMultipleNovels ? '选择目标小说后，问答上下文会严格切换到该作品。' : '小说完成索引后才能开始问答。' }}
+              {{ hasMultipleNovels ? '点击已索引的小说卡片即可将其设为当前咨询对象。' : '小说完成索引后才能开始问答。' }}
             </p>
           </div>
         </div>
@@ -543,7 +509,7 @@ onUnmounted(() => {
             <Icon name="x" :size="17" />
           </button>
         </div>
-        <KnowledgeManager domain="novel" @files-changed="onFilesChanged" />
+        <KnowledgeManager domain="novel" :selected-file-id="selectedFileId" @files-changed="onFilesChanged" @select="onLibrarySelect" />
       </aside>
     </div>
   </div>

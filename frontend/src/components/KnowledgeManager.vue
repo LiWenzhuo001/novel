@@ -8,9 +8,24 @@ type KBFile = KBFileInfo
 
 const emit = defineEmits<{
   (event: 'files-changed', files: KBFile[]): void
+  (event: 'select', file: KBFile): void
 }>()
 
-withDefaults(defineProps<{ domain?: 'novel' }>(), { domain: 'novel' })
+withDefaults(defineProps<{
+  domain?: 'novel'
+  selectedFileId?: string | null
+}>(), { domain: 'novel', selectedFileId: null })
+
+// 点书即切换当前咨询对象；未就绪的书给出原因提示。
+const onCardClick = (file: KBFile) => {
+  if (file.status === 'indexed') {
+    emit('select', file)
+  } else if (file.status === 'failed') {
+    showToast('该小说索引失败，无法选择')
+  } else {
+    showToast('该小说正在索引中，完成后即可选择')
+  }
+}
 
 const files = ref<KBFile[]>([])
 const loading = ref(true)
@@ -226,7 +241,19 @@ onUnmounted(stopPolling)
         <div
           v-for="file in files"
           :key="file.id"
-          class="group flex items-center gap-2.5 rounded-lg bg-white ring-1 ring-black/[0.07] px-3 py-2.5 transition-colors duration-200 hover:ring-brand-200 animate-fadeIn"
+          class="group flex items-center gap-2.5 rounded-lg bg-white ring-1 px-3 py-2.5 transition-all duration-200 animate-fadeIn"
+          :class="[
+            file.id === selectedFileId
+              ? 'ring-2 ring-inset ring-brand-400 bg-brand-50/60 cursor-pointer'
+              : 'ring-black/[0.07] hover:ring-brand-200',
+            file.status === 'indexed' ? 'cursor-pointer' : 'cursor-default',
+          ]"
+          role="button"
+          tabindex="0"
+          :aria-pressed="file.id === selectedFileId"
+          :aria-label="`选择 ${displayName(file.filename)} 为当前咨询小说`"
+          @click="onCardClick(file)"
+          @keydown.enter="onCardClick(file)"
         >
           <span class="shrink-0 w-9 h-9 rounded-lg bg-brand-50 ring-1 ring-brand-100/60 flex items-center justify-center text-[9px] font-bold text-brand-700 tracking-wide">
             {{ extOf(file.filename) }}
@@ -235,6 +262,7 @@ onUnmounted(stopPolling)
             <p class="text-[13px] font-medium text-ink truncate" :title="displayName(file.filename)">
               {{ displayName(file.filename) }}
               <span v-if="file.is_system" class="ml-1 inline-flex items-center rounded-full bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold text-brand-700 ring-1 ring-brand-100 align-middle">系统</span>
+              <span v-if="file.id === selectedFileId" class="ml-1 inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700 ring-1 ring-emerald-200 align-middle">当前</span>
             </p>
             <div class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-faint">
               <span :class="['inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ring-1', statusMeta(file).cls]">
@@ -278,7 +306,7 @@ onUnmounted(stopPolling)
           <div class="shrink-0 flex items-center gap-0.5">
             <button
               v-if="!file.is_system && shouldOfferReindex(file)"
-              @click="onReindex(file)"
+              @click.stop="onReindex(file)"
               class="w-8 h-8 rounded-lg flex items-center justify-center text-amber-600 transition-colors hover:bg-amber-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
               :disabled="isBusy(file) || reindexingId === file.id"
               :aria-label="`重新索引 ${displayName(file.filename)}`"
@@ -288,7 +316,7 @@ onUnmounted(stopPolling)
             </button>
             <button
               v-if="!file.is_system"
-              @click="onDelete(file)"
+              @click.stop="onDelete(file)"
               class="w-8 h-8 rounded-lg flex items-center justify-center text-ink-faint opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 transition-colors hover:bg-rose-50 hover:text-rose-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
               :disabled="isBusy(file) || deletingId === file.id"
               :aria-label="`删除 ${displayName(file.filename)}`"
