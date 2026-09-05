@@ -156,6 +156,15 @@ class Settings:
         self.memory_extract_max_tokens = max(128, int(os.getenv("MEMORY_EXTRACT_MAX_TOKENS", "600")))
         self.memory_task_timeout = max(5.0, float(os.getenv("MEMORY_TASK_TIMEOUT", "30")))
         self.memory_min_importance = min(1.0, max(0.0, float(os.getenv("MEMORY_MIN_IMPORTANCE", "0.55"))))
+        # 偏好与普通记忆分池召回：偏好占独立预算（默认 3），不再挤占小说/会话事实（默认 5）。
+        self.memory_preference_top_k = max(0, min(10, int(os.getenv("MEMORY_PREFERENCE_TOP_K", "3"))))
+        self.memory_fact_pool_size = max(1, min(50, int(os.getenv("MEMORY_FACT_POOL_SIZE", "5"))))
+        # 摘要触发增加 token 感知阈值（按 字符数/4 估算；参照 Letta 模型感知阈值，避免硬编码魔法数。）
+        self.memory_summary_trigger_tokens = max(128, int(os.getenv("MEMORY_SUMMARY_TRIGGER_TOKENS", "6000")))
+        # B2：会话级记忆 TTL——session_fact 默认 30 天过期；novel_fact/偏好默认永不过期。
+        self.memory_session_fact_ttl_days = max(0, int(os.getenv("MEMORY_SESSION_FACT_TTL_DAYS", "30")))
+        self.memory_ttl_sweeper_enabled = os.getenv("MEMORY_TTL_SWEEPER_ENABLED", "false").lower() == "true"
+        self.memory_ttl_sweeper_interval_hours = max(1, int(os.getenv("MEMORY_TTL_SWEEPER_INTERVAL_HOURS", "24")))
 
         # ===== 请求可靠性边界 =====
         self.agent_request_timeout = float(os.getenv("AGENT_REQUEST_TIMEOUT", "240"))

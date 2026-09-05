@@ -13,6 +13,14 @@ _NOVEL_SIGNALS = (
     "为什么", "为何", "伏笔", "动机", "因果", "谁", "何时", "后来", "结局",
     "根据原文", "原文依据", "核对", "验证", "可靠", "正确吗", "真实吗",
 )
+# 强信号闸专用子集：只收录明确指向小说内容的词，用于覆盖 LLM"不需要检索"的判定。
+# 谁/为什么/之前/之后/事件等日常词保留在 _NOVEL_SIGNALS 供规则兜底与复杂度判断，
+# 但不得进入强制闸，否则"你觉得谁写得更好"这类闲聊也会被强制检索。
+_FORCED_SIGNALS = (
+    "人物", "角色", "关系", "情节", "剧情", "时间线", "章节", "第几章", "页码",
+    "片段", "跨章节", "伏笔", "动机", "因果", "结局", "根据原文", "原文依据",
+    "核对", "验证", "梳理", "对比", "综合",
+)
 _CONVERSATION_SIGNALS = (
     "你好", "嗨", "谢谢", "感谢", "好的", "明白", "知道了", "记住", "记得我的",
     "我的偏好", "我的风格", "语气", "格式", "简短一点", "详细一点", "继续刚才",
@@ -67,7 +75,7 @@ def _rule_needs_retrieval(query: str) -> tuple[bool, str, AnswerMode]:
 
 def _strong_novel_signal(query: str) -> bool:
     text = _NEGATED_SOURCE_RE.sub("", query.strip())
-    return any(signal in text for signal in _NOVEL_SIGNALS)
+    return any(signal in text for signal in _FORCED_SIGNALS)
 
 
 def _hint_is_valid(hint: dict[str, Any]) -> bool:
@@ -121,7 +129,9 @@ def _routing_choice(query: str, routing_hint: dict[str, Any] | None):
     confidence = float(routing_hint["confidence"])
     mode: AnswerMode = routing_hint["answer_mode"]
     reasons: list[str] = []
-    if confidence < settings.query_routing_confidence_threshold:
+    # 低置信度强制闸分级：会话/记忆类回答漏检索代价小，尊重大模型判定；
+    # 只有明确走小说证据路径的判定才维持严格置信度闸。
+    if mode == "novel_evidence" and confidence < settings.query_routing_confidence_threshold:
         reasons.append("low_confidence")
     if _strong_novel_signal(f"{query} {routing_hint.get('original', '')}"):
         reasons.append("strong_novel_signal")

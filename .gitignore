@@ -88,3 +88,11 @@ TUTORIAL.md
 PROJECT.md
 tutorial.html
 
+
+# 测试文件（仅本地运行，不入库）
+backend/tests/
+frontend/src/**/*.test.ts
+frontend/src/**/*.spec.ts
+
+# 部署运维文档（含服务器 IP 等敏感信息）
+DEPLOY.md

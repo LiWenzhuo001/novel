@@ -78,19 +78,15 @@ _NOVEL_REQUEST_RE = re.compile(
 )
 
 
-def _explicit_output_policy(original: str) -> tuple[dict[str, Any], dict[str, Any] | None, bool, bool]:
-    """识别当前轮展示偏好；返回 policy、更新、临时放宽、是否纯偏好。"""
+def _explicit_output_policy(original: str) -> tuple[dict[str, Any], bool, bool]:
+    """识别当轮展示指令；返回当轮 policy、是否为禁展示原文指令、是否纯偏好消息。
+
+    偏好一律不在此持久化，统一交由后台记忆提取保存为自由文本。
+    """
     text = original.strip()
     policy = dict(DEFAULT_OUTPUT_POLICY)
     if _NO_SOURCE_RE.search(text):
-        update = {
-            "preference_key": "answer_presentation",
-            "operation": "upsert",
-            "value": dict(policy),
-            "source": "explicit_user_instruction",
-            "confidence": 0.99,
-        }
-        return policy, update, False, not bool(_NOVEL_REQUEST_RE.search(text))
+        return policy, True, not bool(_NOVEL_REQUEST_RE.search(text))
     if _TEMP_SOURCE_RE.search(text):
         policy.update({
             "summary_only": False,
@@ -98,8 +94,8 @@ def _explicit_output_policy(original: str) -> tuple[dict[str, Any], dict[str, An
             "allow_direct_quotes": True,
             "citation_style": "normal",
         })
-        return policy, None, True, False
-    return policy, None, False, False
+        return policy, False, False
+    return policy, False, False
 
 
 def _history_text(history: Sequence[BaseMessage], limit: int) -> str:
@@ -175,30 +171,6 @@ def _validate_policy(value: object, base: dict[str, Any]) -> dict[str, Any] | No
     return policy
 
 
-def _validate_preference_update(value: object, policy: dict[str, Any]) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    if not isinstance(value, dict) or value.get("preference_key") != "answer_presentation":
-        return None
-    if value.get("operation", "upsert") != "upsert":
-        return None
-    stored = value.get("value", policy)
-    validated = _validate_policy(stored, DEFAULT_OUTPUT_POLICY)
-    if validated is None:
-        return None
-    try:
-        confidence = float(value.get("confidence", 0.99))
-    except (TypeError, ValueError):
-        return None
-    return {
-        "preference_key": "answer_presentation",
-        "operation": "upsert",
-        "value": validated,
-        "source": str(value.get("source") or "explicit_user_instruction")[:80],
-        "confidence": max(0.0, min(1.0, confidence)),
-    }
-
-
 def _validate_payload(
     payload: dict[str, Any],
     original: str,
@@ -213,15 +185,15 @@ def _validate_payload(
     needs_retrieval = payload.get("needs_retrieval", True)
     answer_mode = payload.get("answer_mode", "novel_evidence")
     retrieval_reason = payload.get("retrieval_reason", "legacy_query_preparation")
-    explicit_policy, explicit_update, _, preference_only = _explicit_output_policy(original)
-    base_policy = merge_output_policy(memory_policy, explicit_policy if explicit_update else None)
+    explicit_policy, no_source_directive, preference_only = _explicit_output_policy(original)
+    base_policy = merge_output_policy(memory_policy, explicit_policy if no_source_directive else None)
 
     if not isinstance(standalone, str) or not isinstance(retrieval, str):
         return None, "missing_query"
     standalone, retrieval = standalone.strip(), retrieval.strip()
     # An explicit preference-only message must never enter the novel evidence path,
     # even when an older model omits the new routing fields or returns a stale query.
-    if explicit_update and preference_only:
+    if no_source_directive and preference_only:
         needs_retrieval = False
         answer_mode = "memory_context"
         retrieval_reason = "user_output_preference"
@@ -242,7 +214,9 @@ def _validate_payload(
     if needs_retrieval and not retrieval:
         return None, "missing_retrieval_query"
     if not needs_retrieval and retrieval:
-        return None, "unexpected_retrieval_query"
+        # 模型常在 needs_retrieval=false 时顺手填检索词；丢弃该字段即可，
+        # 作废整份结果会把大量本不需要检索的轮次推入强制检索兜底。
+        retrieval = ""
     if needs_retrieval and answer_mode != "novel_evidence":
         return None, "inconsistent_answer_mode"
     if not needs_retrieval and answer_mode == "novel_evidence":
@@ -260,12 +234,7 @@ def _validate_payload(
     policy = _validate_policy(payload.get("output_policy"), base_policy)
     if policy is None:
         return None, "invalid_output_policy"
-    preference_update = _validate_preference_update(payload.get("preference_update"), policy)
-    if payload.get("preference_update") is not None and preference_update is None:
-        return None, "invalid_preference_update"
-    if explicit_update:
-        preference_update = explicit_update
-        policy = merge_output_policy(policy, explicit_update["value"])
+    if no_source_directive:
         # A direct no-source instruction is a presentation policy even when the
         # same turn also asks a novel question; it must not disable RAG.
         policy["summary_only"] = True
@@ -293,14 +262,13 @@ def _validate_payload(
         "answer_mode": answer_mode,
         "retrieval_reason": retrieval_reason.strip(),
         "output_policy": policy,
-        "preference_update": preference_update,
     }, "ok"
 
 
 def _fallback(original: str, reason: str, memory_policy: dict[str, Any] | None = None) -> RewriteResult:
-    policy, preference_update, _, preference_only = _explicit_output_policy(original)
+    policy, _, preference_only = _explicit_output_policy(original)
     policy = merge_output_policy(memory_policy, policy)
-    if preference_update and preference_only:
+    if preference_only:
         return RewriteResult(
             original=original,
             standalone_query=original,
@@ -312,7 +280,6 @@ def _fallback(original: str, reason: str, memory_policy: dict[str, Any] | None =
             answer_mode="memory_context",
             retrieval_reason="user_output_preference",
             output_policy=policy,
-            preference_update=preference_update,
         )
     return RewriteResult(
         original=original,
@@ -339,11 +306,12 @@ def _prompt(original: str, history_text: str, *, correction: bool = False, memor
 2. retrieval_query：只有需要小说原文证据时才生成一条检索 Query，否则必须为空字符串；
 3. needs_retrieval：判断本轮是否必须调用小说 RAG；
 4. answer_mode：novel_evidence、memory_context 或 conversation；
-5. retrieval_reason、output_policy、preference_update、intent、entities、evidence_focus、confidence。
+5. retrieval_reason、output_policy、intent、entities、evidence_focus、confidence。
 
 需要 RAG：小说事实、人物关系、情节因果、时间线、章节定位、伏笔动机、原文依据、核对结论，
-以及结合历史后仍指向小说内容的指代问题。边界不清或置信度不足时选择 RAG。
-不需要 RAG：问候、感谢、闲聊、用户偏好、回答风格/格式/长度调整、纯会话承接和记忆操作。
+以及结合历史后仍指向小说内容的指代问题。问题指向小说但措辞含糊时选择 RAG。
+不需要 RAG：问候、感谢、闲聊、用户偏好、回答风格/格式/长度调整、纯会话承接和记忆操作；
+这类消息即使带着"谁、为什么、之前"等字眼，只要不指向小说内容就不要 RAG。
 
 特别注意：
 - “不要展示原文，只给总结”是用户输出偏好，不是原文证据请求；
@@ -370,7 +338,6 @@ def _prompt(original: str, history_text: str, *, correction: bool = False, memor
   "answer_mode": "memory_context",
   "retrieval_reason": "user_output_preference",
   "output_policy": {json.dumps(DEFAULT_OUTPUT_POLICY, ensure_ascii=False)},
-  "preference_update": null,
   "entities": [],
   "evidence_focus": [],
   "confidence": 0.0
@@ -436,7 +403,6 @@ async def rewrite_query(query: str, history: Sequence[BaseMessage], *, llm=None,
             answer_mode=validated["answer_mode"],
             retrieval_reason=validated["retrieval_reason"],
             output_policy=validated["output_policy"],
-            preference_update=validated["preference_update"],
         )
     except asyncio.CancelledError:
         raise

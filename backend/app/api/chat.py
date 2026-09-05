@@ -25,6 +25,9 @@ from app.agent.runtime import stream_agent_question
 log = get_logger("chat")
 router = APIRouter()
 
+# fire-and-forget 的记忆维护任务必须持引用，否则可能被 GC 提前回收（asyncio 官方警告）。
+_memory_tasks: set[asyncio.Task] = set()
+
 
 def _to_lc_messages(history: List[dict]) -> List[BaseMessage]:
     """把持久化的简化消息转换为 LangChain 消息对象。"""
@@ -201,12 +204,15 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
             elif chat_session.file_id is None:
                 chat_session.file_id = req.file_id
                 await session.commit()
+            # A2: bounded read - rewrite only needs the last query_rewrite_history_messages rows
+            # (mirrors Zep bounded-read; raw rows stay forever).
             history_result = await session.execute(
                 select(ChatMessage)
                 .where(ChatMessage.session_id == session_id)
-                .order_by(ChatMessage.id)
+                .order_by(ChatMessage.id.desc())
+                .limit(settings.query_rewrite_history_messages)
             )
-            history_rows = history_result.scalars().all()
+            history_rows = list(reversed(list(history_result.scalars().all())))
             history_messages = _to_lc_messages([
                 {"role": row.role, "content": row.content} for row in history_rows
             ])
@@ -222,7 +228,6 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
         reply_sources: list[dict] = []
         started = time.perf_counter()
         metrics.incr("chat_requests")
-        preference_persisted = False
         try:
             async with asyncio.timeout(settings.agent_request_timeout):
                 if await request.is_disconnected():
@@ -252,18 +257,6 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                     metrics.incr("sse_cancellations")
                     log.info("chat.novel_client_disconnected", session_id=session_id)
                     return
-
-                preference_update = rewrite.preference_update
-                if req.memory_mode == "auto" and settings.memory_enabled and preference_update:
-                    preference_persisted = await memory_service.safe_upsert_preference(
-                        preference_update,
-                        source_message_id=user_message_id,
-                    )
-                    if preference_persisted:
-                        yield _sse_event("memory_updated", {
-                            "status": "applied",
-                            "preference_key": preference_update.get("preference_key"),
-                        })
 
                 fallback_reason = ""
                 async for stream_event in stream_agent_question(
@@ -353,10 +346,11 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                         user_text=req.message,
                         assistant_text=reply,
                         assistant_message_id=assistant_message_id,
-                        preference_update=None if preference_persisted else preference_update,
                     )
 
-                asyncio.create_task(update_memory_background())
+                task = asyncio.create_task(update_memory_background())
+                _memory_tasks.add(task)
+                task.add_done_callback(_memory_tasks.discard)
                 # The actual extraction is intentionally detached; this event lets the UI
                 # refresh/label the memory panel without delaying the answer stream.
                 yield _sse_event("memory_updated", {"status": "scheduled"})

@@ -175,6 +175,7 @@ class AgentMemory(Base):
     importance = Column(Float, default=0.5, nullable=False)
     source_message_id = Column(Integer)
     expires_at = Column(DateTime)
+    ttl_minutes = Column(Integer, nullable=True)  # TTL minutes (LangGraph twin-column pattern).
     meta_json = Column(Text, default="{}")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

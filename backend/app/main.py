@@ -74,6 +74,24 @@ async def lifespan(app: FastAPI):
                 print(f"[INFO] reranker 模型预热完成（{settings.reranker_model}）")
         except Exception as e:  # noqa: BLE001
             print(f"[WARNING] reranker 初始化失败（检索将回退为不重排）：{e}")
+    # B2: TTL sweeper background task (LangGraph start_ttl_sweeper pattern); off by default.
+    if settings.memory_ttl_sweeper_enabled:
+
+        async def _memory_ttl_sweeper_loop():
+            from app.services.memory_service import sweep_expired_memories
+
+            while True:
+                try:
+                    deleted = await sweep_expired_memories()
+                    if deleted:
+                        log.info("memory.ttl_swept", deleted=deleted)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("memory.ttl_sweep_failed", error=str(exc)[:200])
+                await asyncio.sleep(settings.memory_ttl_sweeper_interval_hours * 3600)
+
+        asyncio.create_task(_memory_ttl_sweeper_loop())
     yield
 
 
