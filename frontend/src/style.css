@@ -21,7 +21,7 @@ body,
 body {
   min-width: 320px;
   overflow-x: hidden;
-  background: #f7f7f5;
+  background: #f3f4f6;
 }
 
 body.drawer-open {
@@ -29,7 +29,7 @@ body.drawer-open {
 }
 
 ::selection {
-  background: rgba(99, 102, 241, 0.22);
+  background: rgba(37, 99, 235, 0.22);
 }
 
 button,
@@ -42,7 +42,7 @@ button:focus-visible,
 input:focus-visible,
 summary:focus-visible,
 a:focus-visible {
-  outline: 3px solid rgba(79, 70, 229, 0.35);
+  outline: 3px solid rgba(37, 99, 235, 0.35);
   outline-offset: 2px;
 }
 
@@ -111,7 +111,7 @@ button:disabled {
 .chat-md li::marker { color: #6366f1; }
 .chat-md strong { color: #17171c; font-weight: 650; }
 .chat-md code {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(37, 99, 235, 0.1);
   color: #4338ca;
   padding: 1px 6px;
   border-radius: 6px;

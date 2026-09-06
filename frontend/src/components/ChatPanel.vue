@@ -20,6 +20,7 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   extraPayload?: Record<string, any>
   openingMessage?: string
+  citationPanel?: boolean
 }>(), {
   suggestions: () => [],
   title: '你好，我是你的',
@@ -34,6 +35,7 @@ const props = withDefaults(defineProps<{
   placeholder: '询问人物关系、情节、时间线或章节位置…',
   extraPayload: () => ({}),
   openingMessage: '',
+  citationPanel: false,
 })
 type ExpertTask = { label?: string; task?: string }
 
@@ -174,6 +176,15 @@ const updateRendered = (index: number, immediate = false) => {
   }
   if (!renderTimer) renderTimer = setTimeout(render, 50)
 }
+
+// 引用溯源右栏：最近一条带来源的助手消息。
+const latestSources = computed(() => {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i]
+    if (m.role === 'assistant' && m.sources?.length) return m.sources
+  }
+  return []
+})
 
 // 开场消息（如角色扮演的情景旁白+人物开场白）：消息区为空时自动呈现。
 const maybeInsertOpening = () => {
@@ -419,7 +430,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative flex flex-col h-full min-h-0">
+  <div class="relative flex h-full min-h-0">
+    <!-- ===== 对话列 ===== -->
+    <div class="flex flex-col flex-1 min-w-0 min-h-0">
     <!-- ===== 消息流 ===== -->
     <div ref="scroll" class="flex-1 overflow-y-auto scroll-thin" :aria-busy="streaming" aria-live="polite">
       <div class="max-w-3xl mx-auto px-5 sm:px-6 py-8">
@@ -565,7 +578,7 @@ onUnmounted(() => {
                   <span class="text-xs text-ink-faint ml-1.5 tracking-wide">正在思考</span>
                 </div>
 
-                <details v-if="m.sources?.length && m.outputPolicy?.show_citations !== false" class="mt-2 text-xs text-ink-faint group/src">
+                <details v-if="m.sources?.length && m.outputPolicy?.show_citations !== false && !citationPanel" class="mt-2 text-xs text-ink-faint group/src">
                   <summary class="cursor-pointer select-none flex items-center gap-1.5 w-fit rounded-full px-2.5 py-1 ring-1 ring-black/[0.06] bg-white/60 transition-colors hover:text-brand-600 hover:ring-brand-200">
                     <Icon name="chevron-down" :size="12" /> 引用来源 · {{ m.sources.length }}
                   </summary>
@@ -646,5 +659,43 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- ===== 引用溯源右栏（citation-panel 模式） ===== -->
+    <aside
+      v-if="citationPanel"
+      class="hidden xl:flex w-80 shrink-0 flex-col border-l border-black/[0.06] bg-white/70 p-4 overflow-y-auto scroll-thin"
+      aria-label="引用溯源"
+    >
+      <div class="flex items-center justify-between mb-3">
+        <p class="text-xs font-semibold text-ink flex items-center gap-1.5">
+          <Icon name="book" :size="13" class="text-brand-500" /> 引用溯源
+        </p>
+        <span v-if="latestSources.length" class="text-[10px] text-ink-faint">{{ latestSources.length }} 条</span>
+      </div>
+      <div v-if="latestSources.length" class="space-y-2">
+        <div
+          v-for="(s, si) in latestSources"
+          :key="s.id || si"
+          class="rounded-lg bg-white px-3 py-2.5 ring-1"
+          :class="si === 0 ? 'ring-amber-300' : 'ring-black/[0.07]'"
+        >
+          <p class="text-[11px] font-semibold text-ink truncate">
+            {{ sourceChapterLabel(s) }}<template v-if="s.page != null"> · 第 {{ s.page + 1 }} 页</template>
+            <template v-if="s.chunk_no != null"> · 片段 {{ String(s.chunk_no).padStart(4, '0') }}</template>
+          </p>
+          <p class="mt-1 line-clamp-3 text-[11px] leading-4 text-ink-mute">{{ s.snippet }}</p>
+          <p class="mt-1 text-[10px] text-ink-faint">
+            相似度 {{ (s.score ?? 0).toFixed(2) }}
+            <template v-if="s.neighbor"> · 邻块扩展</template>
+          </p>
+        </div>
+      </div>
+      <p v-else class="py-6 text-center text-[11px] leading-5 text-ink-faint">
+        最近的回答没有引用来源
+      </p>
+      <p class="mt-auto pt-3 text-[10px] leading-4 text-ink-faint">全文可溯源 · 交叉验证冲突时以原文为准</p>
+    </aside>
+    </div>
   </div>
 </template>
+

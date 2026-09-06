@@ -26,6 +26,46 @@ defineProps<{ name: string; size?: number | string }>()
       <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
       <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
     </g>
+    <!-- Book -->
+    <g v-else-if="name === 'book'">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </g>
+    <!-- Search -->
+    <g v-else-if="name === 'search'">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.35-4.35" />
+    </g>
+    <!-- Home -->
+    <g v-else-if="name === 'home'">
+      <path d="M3 10.5L12 3l9 7.5" />
+      <path d="M5 9.5V21h14V9.5" />
+      <path d="M9 21v-6h6v6" />
+    </g>
+    <!-- Layers -->
+    <g v-else-if="name === 'layers'">
+      <path d="M12 2l10 5-10 5L2 7z" />
+      <path d="M2 12l10 5 10-5" />
+      <path d="M2 17l10 5 10-5" />
+    </g>
+    <!-- Clock -->
+    <g v-else-if="name === 'clock'">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 3" />
+    </g>
+    <!-- Plus -->
+    <g v-else-if="name === 'plus'">
+      <path d="M12 5v14M5 12h14" />
+    </g>
+    <!-- ChevronRight -->
+    <g v-else-if="name === 'chevron-right'">
+      <path d="M9 6l6 6-6 6" />
+    </g>
+    <!-- List -->
+    <g v-else-if="name === 'list'">
+      <path d="M8 6h13M8 12h13M8 18h13" />
+      <path d="M3 6h.01M3 12h.01M3 18h.01" />
+    </g>
     <!-- FileText -->
     <g v-else-if="name === 'file-text'">
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />

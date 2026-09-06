@@ -80,15 +80,15 @@ const remove = async (item: MemoryItem) => {
 }
 
 const label = (type: string) => ({
-  user_preference: '用户偏好',
-  novel_fact: '小说记忆',
-  session_fact: '本轮会话',
+  user_preference: '对话记忆',
+  novel_fact: '知识记忆',
+  session_fact: '会话记忆',
 }[type] || '记忆')
 
 const sections = computed(() => [
-  { key: 'preference', title: '用户偏好', items: grouped.value.preference },
-  { key: 'novel', title: '小说记忆', items: grouped.value.novel },
-  { key: 'session', title: '会话记忆', items: grouped.value.session },
+  { key: 'novel', title: '知识记忆 · 小说事实与设定', items: grouped.value.novel },
+  { key: 'preference', title: '对话记忆 · 偏好与要点', items: grouped.value.preference },
+  { key: 'session', title: '会话记忆 · 当前上下文', items: grouped.value.session },
 ].filter((section) => section.items.length))
 
 watch(() => [props.sessionKey, props.fileId], () => void load())

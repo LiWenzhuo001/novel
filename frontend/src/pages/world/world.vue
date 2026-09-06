@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import Icon from '../../components/Icon.vue'
 import ChatPanel from '../../components/ChatPanel.vue'
 import {
@@ -9,7 +8,6 @@ import {
 } from '../../api/client'
 import { showToast } from '../../utils/toast'
 
-const router = useRouter()
 const MAX_PERSONAS = 3
 const CONFIG_KEY = 'novel_world_config'
 
@@ -257,33 +255,8 @@ watch(selectedNames, () => saveConfig())
 
 <template>
   <div class="h-full flex flex-col">
-    <!-- ===== 顶栏 ===== -->
-    <header class="fixed top-0 inset-x-0 h-16 z-30 bg-white/95 backdrop-blur border-b border-black/[0.08] flex items-center justify-between gap-3 px-4 sm:px-6">
-      <div class="flex items-center gap-2.5 min-w-0">
-        <button
-          class="btn-ghost w-9 h-9 !p-0 !rounded-lg"
-          :aria-label="started ? '返回选人界面' : '返回问答'"
-          :title="started ? '返回选人界面' : '返回问答'"
-          @click="started ? backToSetup() : router.push('/chat')"
-        >
-          <Icon name="arrow-left" :size="16" />
-        </button>
-        <div class="shrink-0 w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center text-white shadow-card">
-          <Icon name="book-open" :size="17" />
-        </div>
-        <div class="min-w-0">
-          <p class="font-display text-[15px] font-bold tracking-wide text-ink leading-tight truncate">进入小说世界</p>
-          <p class="text-[10px] uppercase tracking-[0.18em] text-ink-faint leading-tight">Step Into The Story</p>
-        </div>
-      </div>
-      <div v-if="started" class="flex items-center gap-2 min-w-0">
-        <span class="chip !max-w-[420px] truncate" :title="membersLabel">{{ membersLabel }}<template v-if="chapterUntil"> · 截至{{ chapterUntil }} 章</template></span>
-        <button class="btn-ghost !rounded-lg px-3 py-1.5 text-xs shrink-0" @click="backToSetup">换人物</button>
-      </div>
-    </header>
-
     <!-- ===== 选人阶段 ===== -->
-    <div v-if="!started" class="pt-20 flex-1 min-h-0 overflow-y-auto scroll-thin">
+    <div v-if="!started" class="pt-6 flex-1 min-h-0 overflow-y-auto scroll-thin">
       <div class="mx-auto w-full max-w-2xl px-5 pb-10 space-y-5">
         <!-- 选小说 -->
         <section class="surface p-4">
@@ -416,8 +389,14 @@ watch(selectedNames, () => saveConfig())
     </div>
 
     <!-- ===== 对话阶段 ===== -->
-    <div v-else class="pt-16 flex-1 flex min-h-0">
+    <div v-else class="flex-1 flex min-h-0">
       <main class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+        <!-- 轻量上下文条：成员/章节提示与快速换人（侧栏在移动端隐藏，此条保留退路） -->
+        <div class="h-12 shrink-0 flex items-center gap-3 border-b border-black/[0.06] bg-white/70 px-4 sm:px-6">
+          <span class="chip !max-w-[55vw] truncate" :title="membersLabel">{{ membersLabel }}<template v-if="chapterUntil"> · 截至{{ chapterUntil }} 章</template></span>
+          <span class="hidden sm:inline text-[11px] text-ink-faint truncate">{{ chapterUntil ? '人物只记得此前剧情' : '人物知晓全书剧情' }}</span>
+          <button class="btn-ghost ml-auto !rounded-lg px-3 py-1.5 text-xs shrink-0" @click="backToSetup">换人物</button>
+        </div>
         <ChatPanel
           :key="sessionKey"
           role="student"

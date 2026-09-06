@@ -4,7 +4,12 @@ import { getApiToken } from '../api/client'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/chat' },
+    {
+      path: '/',
+      name: 'home',
+      component: () => import('../pages/home/home.vue'),
+      meta: { title: '首页工作台', requiresAuth: true },
+    },
     {
       path: '/login',
       name: 'login',
@@ -15,7 +20,13 @@ const router = createRouter({
       path: '/chat',
       name: 'chat',
       component: () => import('../pages/chat/chat.vue'),
-      meta: { title: '小说 RAG 问答', requiresAuth: true },
+      meta: { title: '问答工作台', requiresAuth: true },
+    },
+    {
+      path: '/library',
+      name: 'library',
+      component: () => import('../pages/library/library.vue'),
+      meta: { title: '知识库书架', requiresAuth: true },
     },
     {
       path: '/memories',
@@ -29,7 +40,7 @@ const router = createRouter({
       component: () => import('../pages/world/world.vue'),
       meta: { title: '进入小说世界', requiresAuth: true },
     },
-    { path: '/:pathMatch(.*)*', redirect: '/chat' },
+    { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
 
@@ -38,8 +49,8 @@ router.beforeEach((to) => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (to.path === '/login' && getApiToken()) {
-    const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : '/chat'
-    return redirect.startsWith('/') ? redirect : '/chat'
+    const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : '/'
+    return redirect.startsWith('/') ? redirect : '/'
   }
   return true
 })

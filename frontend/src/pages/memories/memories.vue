@@ -1,20 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
 import Icon from '../../components/Icon.vue'
 import MemoryPanel from '../../components/MemoryPanel.vue'
 import { getMe, type UserInfo } from '../../api/client'
 
-const router = useRouter()
 const user = ref<UserInfo | null>(null)
 const panelRef = ref<InstanceType<typeof MemoryPanel> | null>(null)
-
-const accountName = computed(() => user.value?.display_name || user.value?.username || '')
-
-const back = () => {
-  if (window.history.length > 1) router.back()
-  else router.push('/chat')
-}
 
 const refresh = () => panelRef.value?.refresh()
 
@@ -22,41 +13,45 @@ onMounted(async () => {
   try {
     user.value = (await getMe()).data
   } catch {
-    // 401 由 client 统一跳登录；其余场景顶栏不展示用户名即可。
+    // 401 由 client 统一跳登录。
   }
 })
 </script>
 
 <template>
-  <div class="min-h-screen bg-paper flex flex-col">
-    <!-- 轻量页头：返回 + 标题 + 当前用户 -->
-    <header class="sticky top-0 z-40 h-14 flex items-center gap-3 px-5 border-b border-black/[0.06] bg-white/85 backdrop-blur">
-      <button
-        class="btn-ghost h-9 px-3 !rounded-lg flex items-center gap-1.5 text-xs text-ink-mute"
-        aria-label="返回聊天"
-        @click="back"
-      >
-        <Icon name="arrow-left" :size="14" /> 返回聊天
-      </button>
-      <div class="flex items-center gap-2">
-        <Icon name="sparkles" :size="15" class="text-brand-600" />
-        <h1 class="text-sm font-semibold text-ink">对话记忆</h1>
-      </div>
-      <div class="ml-auto flex items-center gap-2.5">
-        <button class="btn-ghost h-9 w-9 !rounded-lg !p-0" aria-label="刷新记忆" @click="refresh">
-          <Icon name="refresh" :size="15" />
-        </button>
-        <span
-          v-if="accountName"
-          class="w-7 h-7 rounded-full bg-brand-600 text-white flex items-center justify-center text-[11px] font-semibold shadow-sm"
-          :title="accountName"
-        >{{ accountName.slice(0, 1).toUpperCase() }}</span>
-      </div>
-    </header>
+  <div class="h-full overflow-y-auto scroll-thin">
+    <div class="mx-auto w-full max-w-4xl px-5 py-6 space-y-4">
+      <!-- 三层记忆说明横幅 -->
+      <section class="surface p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs font-semibold text-ink flex items-center gap-1.5">
+            <Icon name="layers" :size="14" class="text-brand-500" /> 三层记忆 · 随对话自动沉淀
+          </p>
+          <button class="btn-ghost h-8 px-2.5 !rounded-lg flex items-center gap-1 text-xs text-ink-mute" aria-label="刷新记忆" @click="refresh">
+            <Icon name="refresh" :size="13" /> 刷新
+          </button>
+        </div>
+        <div class="mt-2.5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] leading-4">
+          <div class="rounded-lg bg-brand-50/70 px-3 py-2 ring-1 ring-brand-100">
+            <p class="font-semibold text-brand-700">知识记忆</p>
+            <p class="mt-0.5 text-ink-mute">角色关系、情节设定等长期事实，跨会话复用</p>
+          </div>
+          <div class="rounded-lg bg-emerald-50/70 px-3 py-2 ring-1 ring-emerald-100">
+            <p class="font-semibold text-emerald-700">对话记忆</p>
+            <p class="mt-0.5 text-ink-mute">问答沉淀的要点与你的偏好、修正记录</p>
+          </div>
+          <div class="rounded-lg bg-paper px-3 py-2 ring-1 ring-black/[0.06]">
+            <p class="font-semibold text-ink-soft">会话记忆</p>
+            <p class="mt-0.5 text-ink-mute">当前会话使用中的短期上下文</p>
+          </div>
+        </div>
+        <p class="mt-2 text-[10px] text-ink-faint">
+          {{ user ? `当前用户：${user.display_name || user.username} · ` : '' }}每类独立清理 · 不影响检索与问答
+        </p>
+      </section>
 
-    <!-- 记忆列表主体 -->
-    <main class="flex-1 w-full max-w-3xl mx-auto px-5 py-6">
+      <!-- 记忆面板（三类分组 + 删除） -->
       <MemoryPanel ref="panelRef" class="!rounded-xl" />
-    </main>
+    </div>
   </div>
 </template>
