@@ -396,18 +396,6 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                         log.info("chat.novel_client_disconnected", session_id=session_id)
                         return
 
-                    preference_update = rewrite.preference_update
-                    if req.memory_mode == "auto" and settings.memory_enabled and preference_update:
-                        preference_persisted = await memory_service.safe_upsert_preference(
-                            preference_update,
-                            source_message_id=user_message_id,
-                        )
-                        if preference_persisted:
-                            yield _sse_event("memory_updated", {
-                                "status": "applied",
-                                "preference_key": preference_update.get("preference_key"),
-                            })
-
                     async for stream_event in stream_agent_question(
                         rewrite.standalone_query,
                         req.strategy,
