@@ -8,9 +8,13 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
+from langchain_core.tools import tool
+
 from app.agent.types import ToolResult
 from app.config import settings
+from app.core.context import get_memory_session
 from app.core.rag import retrieve_novel_context
+from app.services import memory_service
 
 ToolHandler = Callable[..., Awaitable[ToolResult]]
 
@@ -171,7 +175,96 @@ def build_default_registry() -> ToolRegistry:
     registry.register(ToolSpec("retrieve_novel", "混合检索小说原文并返回引用", timeout_seconds=settings.agent_tool_timeout), _retrieve_novel)
     registry.register(ToolSpec("get_chapter_context", "检索命中章节的相邻片段", timeout_seconds=settings.agent_tool_timeout), _chapter_context)
     registry.register(ToolSpec("calculator", "执行受限数值计算", timeout_seconds=settings.agent_tool_timeout), _calculator)
+    _register_memory_tools(registry)
     return registry
+
+
+# ===== 记忆工具（模型自主发起，memory_agent 节点执行） =====
+# 会话上下文（session_id/file_id）由记忆决策节点通过 ContextVar 注入，
+# 工具 schema 只暴露业务参数；handler 的 **_ 吞掉模型多余参数。
+
+
+async def _search_memories_impl(query: str, **_: Any) -> ToolResult:
+    ctx = get_memory_session()
+    if ctx is None:
+        return ToolResult(status="ok", output={"message": "（会话上下文不可用，无法检索记忆）"})
+    session_id, file_id = ctx
+    rows = await memory_service.retrieve_memories(query=query, session_id=session_id, file_id=file_id)
+    if not rows:
+        return ToolResult(status="ok", output={"message": "（没有找到相关记忆）"})
+    listing = "\n".join(f"- id={row.id} [{row.memory_type}] {row.content}" for row in rows)
+    return ToolResult(status="ok", output={
+        "message": listing, "count": len(rows), "memory_ids": [row.id for row in rows],
+    })
+
+
+async def _add_memory_impl(content: str, memory_type: str = "session_fact", importance: float = 0.7, **_: Any) -> ToolResult:
+    ctx = get_memory_session()
+    if ctx is None:
+        return ToolResult(status="error", error_code="no_session_context", output="（会话上下文不可用，无法保存记忆）")
+    session_id, file_id = ctx
+    if memory_type not in {"user_preference", "novel_fact", "session_fact"}:
+        return ToolResult(status="error", error_code="invalid_memory_type",
+                          output=f"（无效的 memory_type：{memory_type}）")
+    row = await memory_service.save_memory(
+        content, memory_type,
+        session_id=session_id if memory_type == "session_fact" else None,
+        file_id=file_id if memory_type == "novel_fact" else None,
+        importance=importance,
+    )
+    return ToolResult(status="ok", output={"message": f"已保存记忆：{content}", "memory_id": row.id})
+
+
+async def _update_memory_impl(memory_id: str, content: str, **_: Any) -> ToolResult:
+    row = await memory_service.update_memory(memory_id, content=content)
+    if row is None:
+        return ToolResult(status="error", error_code="memory_not_found",
+                          output=f"（未找到 id={memory_id} 的记忆，或该记忆不属于当前用户）")
+    return ToolResult(status="ok", output={"message": f"已更新记忆：{content}", "memory_id": memory_id})
+
+
+async def _delete_memory_impl(memory_id: str, **_: Any) -> ToolResult:
+    deleted = await memory_service.delete_memory(memory_id)
+    if not deleted:
+        return ToolResult(status="error", error_code="memory_not_found",
+                          output=f"（未找到 id={memory_id} 的记忆，或该记忆不属于当前用户）")
+    return ToolResult(status="ok", output={"message": f"已删除记忆：{memory_id}"})
+
+
+@tool
+async def search_memories(query: str) -> str:
+    """按关键词检索当前用户的长期记忆（返回记忆 id 与内容）。在新增/修改/删除记忆之前，先调用本工具确认已有记忆，避免重复或遗漏。"""
+    return await _search_memories_impl(query)
+
+
+@tool
+async def add_memory(content: str, memory_type: str = "session_fact", importance: float = 0.7) -> str:
+    """保存一条值得跨轮记住的稳定信息。memory_type：user_preference（用户偏好）/ novel_fact（小说事实）/ session_fact（会话事实）。仅当用户明确表达偏好或重要事实时调用。"""
+    return await _add_memory_impl(content, memory_type=memory_type, importance=importance)
+
+
+@tool
+async def update_memory(memory_id: str, content: str) -> str:
+    """更新一条已有记忆的内容（先用 search_memories 获取记忆 id）。当用户修正、细化或改变了之前的信息时调用。"""
+    return await _update_memory_impl(memory_id, content)
+
+
+@tool
+async def delete_memory(memory_id: str) -> str:
+    """删除一条已有记忆（先用 search_memories 获取记忆 id）。仅当用户明确要求忘记某事或撤回偏好时调用。"""
+    return await _delete_memory_impl(memory_id)
+
+
+# bind_tools 用的模型侧工具清单（名字与 registry 白名单一致）。
+MEMORY_AGENT_TOOL_SPECS = (search_memories, add_memory, update_memory, delete_memory)
+MEMORY_AGENT_TOOLS = ("search_memories", "add_memory", "update_memory", "delete_memory")
+
+
+def _register_memory_tools(registry: ToolRegistry) -> None:
+    registry.register(ToolSpec("search_memories", "检索当前用户的长期记忆", timeout_seconds=settings.memory_task_timeout), _search_memories_impl)
+    registry.register(ToolSpec("add_memory", "保存一条长期记忆", timeout_seconds=settings.memory_task_timeout), _add_memory_impl)
+    registry.register(ToolSpec("update_memory", "更新一条长期记忆", timeout_seconds=settings.memory_task_timeout), _update_memory_impl)
+    registry.register(ToolSpec("delete_memory", "删除一条长期记忆", timeout_seconds=settings.memory_task_timeout), _delete_memory_impl)
 
 
 registry = build_default_registry()

@@ -322,6 +322,7 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
         full_reply: list[str] = []
         reply_sources: list[dict] = []
         started = time.perf_counter()
+        model_memory_ops = 0
         metrics.incr("chat_requests")
         try:
             async with asyncio.timeout(settings.agent_request_timeout):
@@ -416,6 +417,12 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                         retrieval_query=rewrite.retrieval_query,
                         query_preparation=rewrite.as_dict(),
                         memory_context=memory_context,
+                        session_id=session_id,
+                        memory_agent_active=(
+                            req.memory_mode == "auto"
+                            and settings.memory_enabled
+                            and settings.memory_agent_enabled
+                        ),
                     ):
                         if await request.is_disconnected():
                             metrics.incr("sse_cancellations")
@@ -451,6 +458,7 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                         elif event_type == "meta":
                             meta = payload or {}
                             fallback_reason = meta.get("fallback_reason", "")
+                            model_memory_ops = len(meta.get("memory_ops") or [])
                             log.info(
                                 "chat.agent_finished",
                                 session_id=session_id,
@@ -494,6 +502,7 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                         user_text=req.message,
                         assistant_text=reply,
                         assistant_message_id=assistant_message_id,
+                        skip_extract=model_memory_ops > 0,
                     )
 
                 task = asyncio.create_task(update_memory_background())

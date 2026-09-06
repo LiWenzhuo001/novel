@@ -42,6 +42,9 @@ class Strategy(StrEnum):
 class AgentState(TypedDict, total=False):
     """LangGraph 在各节点之间传递的共享状态。字段允许按执行路径逐步填充。"""
     query: str
+    session_id: str | None
+    memory_agent_active: bool
+    memory_ops: list
     original_query: str
     standalone_query: str
     retrieval_query: str

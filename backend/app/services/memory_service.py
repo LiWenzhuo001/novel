@@ -335,7 +335,7 @@ async def _generate_summary(previous: str, messages: list[ChatMessage]) -> str:
     return (await _llm_text(prompt, settings.memory_extract_max_tokens)).strip()
 
 
-async def _update_memory(
+async def update_memory(
     memory_id: str,
     *,
     content: str,
@@ -448,14 +448,19 @@ async def maintain_conversation_memory(
     user_text: str,
     assistant_text: str,
     assistant_message_id: int | None = None,
+    skip_extract: bool = False,
 ) -> dict[str, Any]:
-    """后台更新摘要和长期记忆；失败由调用方捕获，不影响回答。"""
+    """后台更新摘要和长期记忆；失败由调用方捕获，不影响回答。
+
+    ``skip_extract``：本轮由模型自主完成记忆操作（memory_agent）时置 True，
+    跳过后台提取避免同一信息双重入库；会话摘要照常生成。
+    """
     summary_updated = False
     memories_added: list[dict[str, Any]] = []
     if not settings.memory_enabled:
         return {"summary_updated": False, "memories_added": []}
 
-    if assistant_text.strip():
+    if assistant_text.strip() and not skip_extract:
         # 先召回已有记忆给提取 LLM，它才能把修正/废弃落到旧条上，而不是追加矛盾条目。
         existing = await retrieve_memories(query=user_text, session_id=session_id, file_id=file_id)
         for item in await _extract_memories(user_text, assistant_text, file_id, existing):
@@ -463,7 +468,7 @@ async def maintain_conversation_memory(
                 await delete_memory(item["id"])
                 continue
             if item["op"] == "update":
-                row = await _update_memory(
+                row = await update_memory(
                     item["id"],
                     content=item["content"],
                     importance=item.get("importance"),

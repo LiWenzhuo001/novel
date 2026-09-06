@@ -28,3 +28,28 @@ def set_current_user(user_id: str):
 def reset_current_user(token) -> None:
     """恢复 set_current_user 返回令牌对应的旧用户上下文。"""
     _current_user.reset(token)
+
+
+# ===== 记忆工具的会话上下文 =====
+# Agent 的记忆工具（search/add/update/delete）执行时需要知道当前会话与小说，
+# 但这些参数不应暴露给模型（模型的工具 schema 只含业务参数）。
+# 记忆决策节点执行前 set，工具函数内 get，模式与 current_user 一致。
+
+_memory_session: ContextVar[tuple[str, str | None] | None] = ContextVar(
+    "memory_session", default=None
+)
+
+
+def set_memory_session(session_id: str, file_id: str | None):
+    """注入当前会话（session_id, file_id），返回 token 以便 finally 中重置。"""
+    return _memory_session.set((session_id, file_id))
+
+
+def get_memory_session() -> tuple[str, str | None] | None:
+    """返回当前记忆工具可用的 (session_id, file_id)；未设置时返回 None。"""
+    return _memory_session.get()
+
+
+def reset_memory_session(token) -> None:
+    """恢复 set_memory_session 返回令牌对应的旧上下文。"""
+    _memory_session.reset(token)

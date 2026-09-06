@@ -165,6 +165,8 @@ class Settings:
         self.memory_session_fact_ttl_days = max(0, int(os.getenv("MEMORY_SESSION_FACT_TTL_DAYS", "30")))
         self.memory_ttl_sweeper_enabled = os.getenv("MEMORY_TTL_SWEEPER_ENABLED", "false").lower() == "true"
         self.memory_ttl_sweeper_interval_hours = max(1, int(os.getenv("MEMORY_TTL_SWEEPER_INTERVAL_HOURS", "24")))
+        # 模型自主记忆：memory_agent 节点把记忆工具交给模型，由模型判断何时新增/更新/遗忘。
+        self.memory_agent_enabled = os.getenv("MEMORY_AGENT_ENABLED", "true").lower() == "true"
 
         # ===== 请求可靠性边界 =====
         self.agent_request_timeout = float(os.getenv("AGENT_REQUEST_TIMEOUT", "240"))

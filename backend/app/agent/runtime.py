@@ -6,16 +6,19 @@ import re
 import time
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+import json
+
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.contracts import EXPERT_CONTRACTS, SPECIALIST_ORDER, SpecialistContract
 from app.agent.dispatcher import dispatch_expert_tasks
 from app.agent.router import route_query
-from app.agent.tools import registry
+from app.agent.tools import MEMORY_AGENT_TOOLS, MEMORY_AGENT_TOOL_SPECS, registry
 from app.agent.types import AgentState, DEFAULT_OUTPUT_POLICY, Strategy
 from app.agent.validation import validate_reports
 from app.config import settings
+from app.core.context import get_memory_session, set_memory_session
 from app.core.llm import get_llm
 from app.core.logging_config import get_logger
 from app.core.metrics import metrics
@@ -560,6 +563,82 @@ async def _reflect_node(state: AgentState) -> dict[str, Any]:
     return {"fallback_reason": state.get("fallback_reason") or ("empty_retrieval" if not state.get("evidence") else "")}
 
 
+async def _memory_agent_node(state: AgentState) -> dict[str, Any]:
+    """模型自主发起的记忆维护：判断本轮是否需要新增、更新或遗忘长期记忆。
+
+    记忆工具（search/add/update/delete）通过 bind_tools 交给模型，模型可多轮
+    调用；执行走与 retrieve_novel 相同的 registry 通道（白名单为记忆工具集）。
+    """
+    step = state.get("current_step", 0) + 1
+    await _emit(state, "step_start", {
+        "step": step,
+        "action": "memory_agent",
+        "purpose": "判断是否需要记录、更新或遗忘记忆",
+    })
+    # 记忆工具需要会话上下文（session_id/file_id），通过 ContextVar 注入。
+    session_id = state.get("session_id")
+    if session_id:
+        set_memory_session(session_id, state.get("file_id"))
+    if get_memory_session() is None:
+        return {"memory_ops": [], "current_step": step}
+
+    context = state.get("synthesis_context") or {}
+    memories = context.get("memories") or []
+    existing = "\n".join(
+        f"- id={m.get('id')} [{m.get('memory_type')}] {m.get('content', '')}"
+        for m in memories if m.get("content")
+    ) or "（暂无长期记忆）"
+    system = (
+        "你是记忆维护助手。根据本轮对话判断是否需要操作用户的长期记忆：\n"
+        "- 用户表达了稳定偏好或重要事实 → add_memory（memory_type："
+        "user_preference=用户偏好；novel_fact=对咨询这本小说有用的事实；session_fact=仅本会话使用的事实）；\n"
+        "- 本轮信息与现有记忆矛盾或需要细化 → update_memory（先 search_memories 拿 id）；\n"
+        "- 用户明确要求忘记或撤回 → delete_memory；\n"
+        "- 不确定时先 search_memories 查看现有记忆再决定，避免重复记录；\n"
+        "- 普通闲聊、一次性问题不需要记忆：直接回复「无需操作」，不调用任何工具。\n"
+        "最多进行 3 次工具调用，完成后用一句话总结做了什么（或说明无需操作）。"
+    )
+    user = (
+        f"本轮用户说：{state.get('original_query', '')}\n"
+        f"助手即将回答的问题：{state.get('standalone_query', '')}\n"
+        f"现有长期记忆：\n{existing}"
+    )
+    llm = get_llm(temperature=0, max_tokens=500).bind_tools(list(MEMORY_AGENT_TOOL_SPECS))
+    messages: list[Any] = [SystemMessage(content=system), HumanMessage(content=user)]
+    ops: list[dict[str, Any]] = []
+    for _ in range(3):
+        response = await llm.ainvoke(messages)
+        calls = getattr(response, "tool_calls", None) or []
+        if not calls:
+            break
+        messages.append(response)
+        for call in calls[:3]:
+            name = call.get("name") or ""
+            args = call.get("args") or {}
+            call_id = call.get("id") or f"mem-{len(ops) + 1}"
+            await _emit(state, "tool_start", {"id": call_id, "tool": name, "label": "记忆操作"})
+            result = await registry.execute(name, allowed_tools=MEMORY_AGENT_TOOLS, **args)
+            # 前端只展示操作语义，不展示记忆内容与参数，避免把用户信息铺在界面上。
+            brief = {
+                "search_memories": "已核对现有记忆",
+                "add_memory": "已记录新的记忆",
+                "update_memory": "已更新既有记忆",
+                "delete_memory": "已遗忘对应记忆",
+            }.get(name, "记忆操作完成")
+            summary = brief if result.status == "ok" else "操作未完成"
+            ops.append({"tool": name, "status": result.status, "summary": summary})
+            await _emit(state, "tool_end", {
+                "id": call_id, "tool": name, "status": result.status, "summary": summary,
+            })
+            messages.append(ToolMessage(
+                content=json.dumps(result.as_dict(), ensure_ascii=False),
+                tool_call_id=call_id,
+            ))
+    if ops:
+        log.info("chat.memory_agent_ops", session_id=state.get("session_id"), ops=len(ops))
+    return {"memory_ops": ops, "current_step": step}
+
+
 def _strip_quote_markers(text: str) -> str:
     return re.sub(r"(?m)^>\s?", "", text).strip()
 
@@ -710,9 +789,17 @@ async def _summary_node(state: AgentState) -> dict[str, Any]:
         "routing_confidence": state.get("routing_confidence"),
         "memory_used_count": len(context.get("memories") or []),
         "summary_used": bool(context.get("summary")),
+        "memory_ops": state.get("memory_ops", []),
     }
     await _emit(state, "meta", meta)
     return {"answer": answer, "fallback_reason": fallback, "status": "completed", "current_step": step}
+
+
+def _after_supervisor(state: AgentState) -> str:
+    """Supervisor 之后先让模型自主维护记忆（可跳过），再进入最终总结。"""
+    if state.get("memory_agent_active"):
+        return "memory_agent"
+    return "summary"
 
 
 def _build_graph():
@@ -728,6 +815,7 @@ def _build_graph():
     graph.add_node("execute", _execute_node)
     graph.add_node("reflect", _reflect_node)
     graph.add_node("supervisor", _supervisor_node)
+    graph.add_node("memory_agent", _memory_agent_node)
     graph.add_node("summary", _summary_node)
     graph.add_edge(START, "route")
     graph.add_edge("route", "plan")
@@ -751,7 +839,12 @@ def _build_graph():
     graph.add_edge("refine_experts", "supervisor")
     graph.add_edge("execute", "reflect")
     graph.add_edge("reflect", "supervisor")
-    graph.add_edge("supervisor", "summary")
+    graph.add_conditional_edges(
+        "supervisor",
+        _after_supervisor,
+        {"memory_agent": "memory_agent", "summary": "summary"},
+    )
+    graph.add_edge("memory_agent", "summary")
     graph.add_edge("summary", END)
     return graph.compile()
 
@@ -769,6 +862,8 @@ async def stream_agent_question(
     query_preparation: dict[str, Any] | None = None,
     query_rewrite: dict[str, Any] | None = None,
     memory_context: dict[str, Any] | None = None,
+    session_id: str | None = None,
+    memory_agent_active: bool = False,
 ):
     """Run LangGraph in the background and bridge live node events to SSE."""
     queue: asyncio.Queue = asyncio.Queue()
@@ -785,6 +880,8 @@ async def stream_agent_question(
         "requested_strategy": strategy,
         "requested_max_steps": max_steps,
         "file_id": file_id,
+        "session_id": session_id,
+        "memory_agent_active": memory_agent_active,
         "event_queue": queue,
     }
 
