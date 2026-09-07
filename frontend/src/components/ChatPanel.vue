@@ -659,7 +659,7 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-
+    </div>
     <!-- ===== 引用溯源右栏（citation-panel 模式） ===== -->
     <aside
       v-if="citationPanel"
@@ -695,7 +695,6 @@ onUnmounted(() => {
       </p>
       <p class="mt-auto pt-3 text-[10px] leading-4 text-ink-faint">全文可溯源 · 交叉验证冲突时以原文为准</p>
     </aside>
-    </div>
   </div>
 </template>
 
