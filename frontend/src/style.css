@@ -17,11 +17,15 @@ body,
   margin: 0;
 }
 
-/* 安静的阅读工作台底色，减少长时间使用时的视觉干扰。 */
+/* 安静的阅读工作台底色：冷灰纸面上叠极淡蓝紫光晕，增加纵深与书卷气。 */
 body {
   min-width: 320px;
   overflow-x: hidden;
-  background: #f3f4f6;
+  background:
+    radial-gradient(56rem 24rem at 12% -4%, rgba(37, 99, 235, 0.07), transparent 60%),
+    radial-gradient(48rem 20rem at 88% -6%, rgba(139, 92, 246, 0.05), transparent 60%),
+    #f3f4f6;
+  background-attachment: fixed;
 }
 
 body.drawer-open {
@@ -199,6 +203,17 @@ button:disabled {
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-fadeIn { animation: fadeIn 0.45s cubic-bezier(0.22, 0.68, 0.36, 1) both; }
+
+/* 错落进场：配合 rise-d0..d3 延迟，让卡片组依次浮现 */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise-in { animation: riseIn 0.5s cubic-bezier(0.22, 0.68, 0.36, 1) both; }
+.rise-d0 { animation-delay: 0.02s; }
+.rise-d1 { animation-delay: 0.08s; }
+.rise-d2 { animation-delay: 0.14s; }
+.rise-d3 { animation-delay: 0.2s; }
 @keyframes floaty {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }

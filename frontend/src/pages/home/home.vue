@@ -116,10 +116,10 @@ const goChat = () => {
 }
 
 const shortcuts = computed(() => [
-  { title: '新建问答', desc: '就当前书籍发起新对话，流式回答', icon: 'messages', to: '/chat' },
-  { title: '管理知识库', desc: '上传新书、查看索引进度、删除与重建', icon: 'book', to: '/library' },
-  { title: '进入小说世界', desc: '选择角色与章节边界，开启角色扮演', icon: 'book-open', to: '/world' },
-  { title: '查看对话记忆', desc: '浏览三层记忆，可按条清理', icon: 'layers', to: '/memories' },
+  { title: '新建问答', desc: '就当前书籍发起新对话，流式回答', icon: 'messages', to: '/chat', accent: 'bg-brand-50 text-brand-600' },
+  { title: '管理知识库', desc: '上传新书、查看索引进度、删除与重建', icon: 'book', to: '/library', accent: 'bg-emerald-50 text-emerald-600' },
+  { title: '进入小说世界', desc: '选择角色与章节边界，开启角色扮演', icon: 'book-open', to: '/world', accent: 'bg-amber-50 text-amber-600' },
+  { title: '查看对话记忆', desc: '浏览三层记忆，可按条清理', icon: 'layers', to: '/memories', accent: 'bg-violet-50 text-violet-600' },
 ])
 
 void Promise.all([loadNovels()]).then(() => void loadSessions())
@@ -128,15 +128,23 @@ void Promise.all([loadNovels()]).then(() => void loadSessions())
 <template>
   <div class="h-full overflow-y-auto scroll-thin">
     <div class="mx-auto w-full max-w-4xl px-5 py-6 sm:px-6 space-y-6">
-      <!-- 欢迎横幅 -->
-      <section class="rounded-2xl bg-gradient-to-r from-brand-50 to-white border border-brand-100 px-6 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="min-w-0">
-          <p class="font-display text-xl font-bold text-ink">{{ greeting }}，继续你的阅读问答</p>
-          <p class="mt-1.5 text-xs leading-5 text-ink-mute truncate">{{ bookLine }}</p>
+      <!-- 欢迎横幅：深蓝书卷 hero -->
+      <section class="rise-in relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-800 px-6 py-7 shadow-pop">
+        <!-- 装饰：衬线「读」字水印 + 柔光斑，书卷气点题 -->
+        <span aria-hidden="true" class="pointer-events-none absolute -right-3 -top-9 select-none font-display text-[9rem] font-bold leading-none text-white/10">读</span>
+        <span aria-hidden="true" class="pointer-events-none absolute -bottom-16 -left-12 h-48 w-48 rounded-full bg-white/10 blur-2xl"></span>
+        <div class="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
+            <p class="font-display text-2xl font-bold tracking-wide text-white">{{ greeting }}，继续你的阅读问答</p>
+            <p class="mt-2 text-xs leading-5 text-brand-100/90 truncate">{{ bookLine }}</p>
+          </div>
+          <button
+            class="shrink-0 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-brand-700 shadow-pop transition-all duration-200 hover:scale-[1.03] hover:bg-brand-50 active:scale-100 flex items-center gap-2"
+            @click="goChat"
+          >
+            <Icon name="messages" :size="15" /> 继续问答
+          </button>
         </div>
-        <button class="btn-primary shrink-0 !rounded-xl px-5 py-2.5 text-sm flex items-center gap-2" @click="goChat">
-          <Icon name="messages" :size="15" /> 继续问答
-        </button>
       </section>
 
       <!-- 快捷入口 -->
@@ -147,12 +155,13 @@ void Promise.all([loadNovels()]).then(() => void loadSessions())
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <button
-            v-for="item in shortcuts"
+            v-for="(item, i) in shortcuts"
             :key="item.to"
-            class="surface p-4 text-left transition-all duration-200 hover:shadow-pop hover:ring-1 hover:ring-brand-200"
+            class="surface rise-in p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-pop hover:ring-1 hover:ring-brand-200"
+            :class="`rise-d${i % 4}`"
             @click="router.push(item.to)"
           >
-            <span class="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+            <span class="w-9 h-9 rounded-lg flex items-center justify-center" :class="item.accent">
               <Icon :name="item.icon" :size="17" />
             </span>
             <p class="mt-2.5 text-[13px] font-semibold text-ink">{{ item.title }}</p>
