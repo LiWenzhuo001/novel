@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.api import auth, chat, knowledge, memory
-from app.db import init_db, async_engine
+from app.db import async_engine, check_database_connection, check_embedding_dimension, check_schema_revision
 from app.core.logging_config import get_logger, new_request_id
 from app.core.metrics import metrics
 from app.core.context import set_current_user, reset_current_user
@@ -30,15 +30,24 @@ log = get_logger("api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 配置校验必须最先执行并 fail-fast：LLM_API_KEY 缺失、reranker 配置错误
+    # 这类部署错误宁可启动失败，也不能等到第一个请求才以静默降级的形式暴露。
+    settings.validate()
+    if settings.enable_reranker:
+        settings.validate_reranker()
     os.makedirs(settings.raw_dir, exist_ok=True)
-    # 等待 Postgres 就绪并建表（含 pgvector 扩展与 HNSW 索引）；
-    # 若仍连不上则告警但不阻断启动
+    # 数据库就绪检查（只读，不执行任何 schema DDL）：连接、迁移版本、向量维度。
+    # 任一失败即启动失败（fail-fast）：修复命令打印在日志里，
+    # 迁移收敛后 schema 变更的唯一入口是 `alembic upgrade head`。
     app.state.db_ready = False
     try:
-        await init_db()
+        await check_database_connection()
+        await check_schema_revision()
+        await check_embedding_dimension()
         app.state.db_ready = True
     except Exception as e:  # noqa: BLE001
-        print(f"[WARNING] PostgreSQL 初始化失败，数据库相关功能将不可用：{e}")
+        print(f"[ERROR] 数据库就绪检查失败，服务启动终止：{e}")
+        raise
 
     # 恢复服务重启前遗留的待索引/租约过期任务。
     if app.state.db_ready:
@@ -220,11 +229,15 @@ async def health():
                 await conn.execute(sql_text("SELECT 1"))
         except Exception:
             db_ok = False
-    return {
-        "status": "ok" if db_ok else "degraded",
+    payload = {
+        "status": "ok" if db_ok else "not_ready",
         "database": "connected" if db_ok else "unavailable",
-        "message": "小说 RAG 问答服务正常" if db_ok else "数据库不可用",
+        "message": "小说 RAG 问答服务正常" if db_ok else "数据库未就绪（连接失败或迁移版本落后），请检查日志",
     }
+    # 未就绪返回 503：compose 健康检查据此阻止 frontend 启动，负载均衡据此摘除实例
+    if not db_ok:
+        return JSONResponse(payload, status_code=503)
+    return payload
 
 
 @app.get("/metrics")

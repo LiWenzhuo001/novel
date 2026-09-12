@@ -7,14 +7,31 @@ from typing import Any
 from app.agent.contracts import EXPERT_CONTRACTS, SPECIALIST_ORDER
 
 
+# 相似度清洗：以下公共素材对"专家间语义重复"无贡献，却在字符 n-gram 里
+# 天然高度重合（共享引用标记、章节标题、任务模板词），比较前剔除。
+# 注意：清洗只服务于相似度口径；契约的长度判定用 _normalize 原口径。
+_SIMILARITY_NOISE_RE = re.compile(
+    r"\[S\d+\]"
+    r"|第\s*[一二三四五六七八九十百千0-9]+\s*[回章节]"
+    r"|页码|片段号?|引用|来源\s*ID|结论"
+    r"|关系变化|变化阶段|关系边|事件结果|时间线|起因|转折|影响"
+)
+
+
 def _normalize(text: str) -> str:
+    """契约口径：仅去引用块标记与非文字符（长度判定用，不做相似度清洗）。"""
     text = re.sub(r"(?m)^>\s?", "", text)
     return re.sub(r"[^\w\u4e00-\u9fff]", "", text.lower())
 
 
+def _normalize_for_similarity(text: str) -> str:
+    """相似度口径：在契约口径之上剔除公共素材。"""
+    return _normalize(_SIMILARITY_NOISE_RE.sub("", text))
+
+
 def char_ngrams(text: str, size: int = 3) -> set[str]:
-    """将报告归一化后切成字符 n-gram，用于中文文本相似度比较。"""
-    normalized = _normalize(text)
+    """将报告按相似度口径归一化后切成字符 n-gram，用于中文文本相似度比较。"""
+    normalized = _normalize_for_similarity(text)
     if len(normalized) < size:
         return {normalized} if normalized else set()
     return {normalized[index:index + size] for index in range(len(normalized) - size + 1)}
@@ -89,9 +106,11 @@ def validate_reports(reports: list[dict[str, Any]], threshold: float) -> tuple[d
         if agent in by_agent and not result["contract_ok"]
     }
     order_index = {name: index for index, name in enumerate(SPECIALIST_ORDER)}
-    available = [name for name in SPECIALIST_ORDER if name in by_agent]
-    for left_index, left in enumerate(available):
-        for right in available[left_index + 1:]:
+    # 定位专家输出是表格结构，与其他专家散文的表面重合天然偏高且不具语义信号，
+    # 不参与正文相似度竞争（契约校验照常）。
+    comparable = [name for name in SPECIALIST_ORDER if name in by_agent and name != "locator"]
+    for left_index, left in enumerate(comparable):
+        for right in comparable[left_index + 1:]:
             similarity = report_similarity(by_agent[left]["report"], by_agent[right]["report"])
             if similarity < threshold:
                 continue

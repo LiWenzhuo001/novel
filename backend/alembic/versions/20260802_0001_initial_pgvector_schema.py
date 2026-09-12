@@ -6,7 +6,6 @@ Create Date: 2026-08-02
 """
 from alembic import op
 import sqlalchemy as sa
-import os
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
@@ -40,7 +39,10 @@ def upgrade() -> None:
         "embeddings",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("embedding", Vector(int(os.getenv("EMBED_DIM", "1536"))), nullable=False),
+        # 维度钉死为 1024（与 0014 终态一致）：历史版本曾读运行时 EMBED_DIM，
+        # 使全新环境的表结构取决于迁移时刻的环境变量——违反迁移确定性原则。
+        # Alembic 不存储校验和：修改已应用的历史文件对存量库零影响，只修正全新执行路径。
+        sa.Column("embedding", Vector(1024), nullable=False),
         sa.Column("source", sa.String(255), nullable=False),
         sa.Column("file_id", sa.String(32)),
         sa.Column("user_id", sa.String(64), server_default="default"),

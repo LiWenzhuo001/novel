@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 
 from app.config import settings
 from app.agent.types import DEFAULT_OUTPUT_POLICY
@@ -23,6 +23,12 @@ log = get_logger("memory_service")
 
 # 提示词允许模型回复"无新增"；这四个字不能落库，否则会顶掉真实历史摘要。
 _NO_NEW_SUMMARY_RE = re.compile(r"^(?:无新增|没有新增)\s*[。.！!?？]*$")
+
+# 摘要折叠窗口：每窗口 30 条，单轮最多折叠 3 个窗口（90 条），
+# 其余 pending 留给下一轮维护，避免后台任务超时。之前一次性只摘要最后
+# 30 条却把 covered_message_id 推进到最后一条，中间消息会永久丢出摘要链。
+SUMMARY_WINDOW = 30
+SUMMARY_MAX_WINDOWS_PER_RUN = 3
 
 
 @dataclass(frozen=True)
@@ -209,11 +215,14 @@ async def retrieve_memories(
     session_id: str,
     file_id: str | None,
     limit: int | None = None,
+    refresh_ttl: bool = True,
 ) -> list[AgentMemory]:
     """按当前会话、当前小说、用户偏好三层作用域召回记忆。
 
     用户偏好不是普通语义文档：必须始终纳入上下文，避免“不要展示原文”
     因为向量相关性不足而在下一轮失效；其余记忆再按相关性排序截断。
+    ``refresh_ttl``：聊天路径为 True（使用中的记忆保持存活）；只读接口
+    （列表/上下文预览）必须传 False——单纯"查看"不应给记忆续命。
     """
     user_id = get_current_user()
     limit = max(1, min(limit or settings.memory_max_context_items,  50))
@@ -251,23 +260,33 @@ async def retrieve_memories(
         others = list(other_result.scalars().all())
     returned = preferences[:pref_budget] + others[:fact_budget]
     # B2: refresh-on-access for TTL rows (LangGraph refresh_ttl pattern); keep hot memories alive.
-    # Recall rows are bounded (<= memory_max_context_items), so per-row refresh cost is negligible.
-    if any(row.ttl_minutes for row in returned):
+    # 单条批量 UPDATE 替代逐行开事务；只读接口传 refresh_ttl=False 完全跳过。
+    if refresh_ttl and any(row.ttl_minutes for row in returned):
         utcnow = datetime.utcnow()
-        for row in returned:
-            if not row.ttl_minutes or not row.expires_at:
-                continue
-            expires = utcnow + timedelta(minutes=row.ttl_minutes)
+        refresh_ids = [
+            row.id for row in returned
+            if row.ttl_minutes and row.expires_at
+        ]
+        if refresh_ids:
             async with AsyncSessionLocal() as sess:
-                await sess.execute(update(AgentMemory).where(AgentMemory.id == row.id).values(expires_at=expires))
+                # 每行用自己的 ttl_minutes 续期：Postgres 端逐行计算，单条 UPDATE 完成。
+                await sess.execute(
+                    update(AgentMemory)
+                    .where(AgentMemory.id.in_(refresh_ids))
+                    .values(expires_at=utcnow + func.make_interval(0, 0, 0, 0, 0, 0, AgentMemory.ttl_minutes))
+                )
                 await sess.commit()
     return returned
 
 
-async def build_memory_context(*, session_id: str, file_id: str | None, query: str) -> dict[str, Any]:
+async def build_memory_context(
+    *, session_id: str, file_id: str | None, query: str, refresh_ttl: bool = True,
+) -> dict[str, Any]:
     """读取摘要与三层相关记忆；用户偏好以自由文本形式随 memories 注入。"""
     summary = await get_latest_summary(session_id)
-    memories_rows = await retrieve_memories(query=query, session_id=session_id, file_id=file_id)
+    memories_rows = await retrieve_memories(
+        query=query, session_id=session_id, file_id=file_id, refresh_ttl=refresh_ttl,
+    )
     memories = tuple(memory_to_dict(row) for row in memories_rows)
     return MemoryContext(
         summary=summary.summary if summary else "",
@@ -381,7 +400,9 @@ async def _extract_memories(
         "user_preference 必须来自用户明确表达的偏好；novel_fact 必须是对当前小说有帮助的稳定事实；"
         "session_fact 仅保存当前会话仍会使用的明确事实。不要保存问候、临时推断、助手自创内容或普通回答。\n"
         "每条记忆带 op 操作：\n"
-        '- "add"：本轮对话带来的、已有记忆未覆盖的新信息，字段 content、memory_type、importance；\n'
+        '- "add"：本轮对话带来的、已有记忆未覆盖的新信息，字段 content、memory_type、importance；'
+        'memory_type 为 user_preference 时必须带 preference_key（简短稳定的偏好标识，如"引用原文"、"回答语言"），'
+        "同一 preference_key 再次出现表示偏好更新，将走结构化更新而不是新增一条；\n"
         '- "update"：本轮对话修正、细化或取代了某条已有记忆时，必须改写该条而不是新增，字段 id（取自已有记忆列表）、content（改写后的完整内容）、importance；\n'
         '- "delete"：本轮对话明确废弃某条已有记忆（如撤销偏好、纠正错误事实），字段 id。\n'
         "与已有记忆矛盾的描述禁止并存，必须用 update 或 delete 处理旧条；与已有记忆重复或无变化时不要输出。"
@@ -437,7 +458,14 @@ async def _extract_memories(
                 content=content[:40],
             )
             continue
-        ops.append({"op": "add", "content": content, "memory_type": memory_type, "importance": importance})
+        # preference_key 只对偏好有意义：同一 key 的后续表达会更新原条而不是无限累积。
+        preference_key = str(item.get("preference_key") or "").strip()[:64] or None
+        if memory_type != "user_preference":
+            preference_key = None
+        ops.append({
+            "op": "add", "content": content, "memory_type": memory_type,
+            "importance": importance, "preference_key": preference_key,
+        })
     return ops
 
 
@@ -480,6 +508,7 @@ async def maintain_conversation_memory(
                     file_id=file_id if item["memory_type"] == "novel_fact" else None,
                     importance=item["importance"],
                     source_message_id=assistant_message_id,
+                    preference_key=item.get("preference_key"),
                     ttl_minutes=(
                         settings.memory_session_fact_ttl_days * 24 * 60
                         if item["memory_type"] == "session_fact" and settings.memory_session_fact_ttl_days > 0
@@ -496,7 +525,7 @@ async def maintain_conversation_memory(
             select(ChatMessage).where(
                 ChatMessage.session_id == session_id,
                 ChatMessage.id > covered_id,
-            ).order_by(ChatMessage.id)
+            ).order_by(ChatMessage.id).limit(SUMMARY_WINDOW * SUMMARY_MAX_WINDOWS_PER_RUN)
         )
         pending = list(result.scalars().all())
     pending_chars = sum(len(row.content or "") for row in pending)
@@ -506,13 +535,22 @@ async def maintain_conversation_memory(
         or pending_chars >= settings.memory_summary_trigger_chars
         or est_tokens >= settings.memory_summary_trigger_tokens
     ):
-        new_summary = await _generate_summary(summary.summary if summary else "", pending[-30:])
-        if new_summary and not _NO_NEW_SUMMARY_RE.match(new_summary.strip()):
+        # 按窗口顺序折叠：每窗口在上一窗口摘要基础上合并，并推进覆盖水位。
+        previous = summary.summary if summary else ""
+        for window_start in range(0, len(pending), SUMMARY_WINDOW):
+            window = pending[window_start:window_start + SUMMARY_WINDOW]
+            new_summary = await _generate_summary(previous, window)
+            if new_summary and not _NO_NEW_SUMMARY_RE.match(new_summary.strip()):
+                previous = new_summary
+            if not previous:
+                # 尚无任何真实摘要内容（首个窗口就"无新增"）：不落库、不推进水位，
+                # 留给下一轮，避免"无新增"顶掉历史或把未摘要消息标记为已覆盖。
+                break
             await save_summary(
                 session_id,
-                new_summary,
-                covered_message_id=pending[-1].id,
-                token_estimate=max(1, len(new_summary) // 4),
+                previous,
+                covered_message_id=window[-1].id,
+                token_estimate=max(1, len(previous) // 4),
             )
             summary_updated = True
     return {"summary_updated": summary_updated, "memories_added": memories_added}
@@ -537,6 +575,7 @@ async def maintain_conversation_memory_safe(
     user_text: str,
     assistant_text: str,
     assistant_message_id: int | None,
+    skip_extract: bool = False,
 ) -> None:
     """带超时与吞错的会话记忆维护；作为后台任务体运行。"""
     try:
@@ -547,6 +586,7 @@ async def maintain_conversation_memory_safe(
                 user_text=user_text,
                 assistant_text=assistant_text,
                 assistant_message_id=assistant_message_id,
+                skip_extract=skip_extract,
             ),
             # 内层每次 LLM 调用已有独立超时；外层需覆盖"提取+摘要"两次串行调用再加余量，
             # 不能复用单次超时，否则稍慢一轮就整段记忆维护被取消。

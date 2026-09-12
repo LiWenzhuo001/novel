@@ -75,7 +75,7 @@ type ToolStep = {
   task?: string
   step?: number
   retry?: number
-  status?: 'running' | 'ok' | 'corrected' | 'invalid' | 'timeout' | 'fallback' | 'error'
+  status?: 'running' | 'ok' | 'corrected' | 'invalid' | 'timeout' | 'fallback' | 'error' | 'fallback_generation' | 'empty_output'
   summary?: string
   text?: string
   latency_ms?: number
@@ -91,14 +91,60 @@ type ChatMessage = {
   dispatchMode?: string
   rendered?: string
   route?: any
+  ragCalled?: boolean
+  plan?: PlanStep[]
+  reflection?: Reflection
+  decisions?: AgentDecision[]
+  validation?: any
+  mainThinking?: ThinkingItem[]
+  expertThinking?: Record<string, ThinkingItem[]>
   memoryContext?: MemoryContext
   outputPolicy?: OutputPolicy
+}
+
+type PlanStep = { step?: number; action?: string; purpose?: string }
+type Reflection = { decision?: string; reason?: string; step?: number }
+type AgentDecision = { action?: string; reason?: string; step?: number }
+type ThinkingStream = 'main_agent' | 'multi_agent'
+type ThinkingPhase = 'decide' | 'plan' | 'reflect' | 'reasoning'
+
+type ThinkingItem = {
+  id: string
+  stream: ThinkingStream
+  agent?: string
+  label?: string
+  phase: ThinkingPhase
+  status: 'running' | 'completed' | 'error' | 'timeout' | 'cancelled' | 'corrected'
+  text: string
+  step?: number
+  retry?: number
+  reasoning_chars?: number
+  truncated?: boolean
+  latency_ms?: number
 }
 
 const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
 const streaming = ref(false)
 const memoryMode = ref<'auto' | 'off'>('auto')
+// 思考过程展示开关：只控制已收到 reasoning 的渲染；原文是否下发由服务端开关决定。
+const showThinking = ref(localStorage.getItem('novel_show_thinking') !== '0')
+const toggleThinking = () => {
+  showThinking.value = !showThinking.value
+  localStorage.setItem('novel_show_thinking', showThinking.value ? '1' : '0')
+}
+const phaseLabel = (phase: string) =>
+  (({ decide: '决策', plan: '计划', reflect: '反思', reasoning: '分析' } as Record<string, string>)[phase] || phase)
+const thinkingStatus = (t: ThinkingItem) => {
+  if (t.status === 'running') return '推理中…'
+  const base = (({
+    completed: '完成', corrected: '纠偏后完成', error: '失败', timeout: '超时', cancelled: '已取消',
+  } as Record<string, string>)[t.status] || t.status)
+  const parts = [base]
+  if (t.reasoning_chars) parts.push(`${t.reasoning_chars} 字`)
+  if (t.truncated) parts.push('已截断')
+  return parts.join(' · ')
+}
 const sessionLoading = ref(true)
 const sessionError = ref('')
 const scroll = ref<HTMLElement>()
@@ -253,7 +299,10 @@ const retrySession = () => {
 }
 
 // 新会话落地（自动创建或后端补发）时通知父组件刷新会话列表。
-const emit = defineEmits<{ (e: 'session-created', id: string): void }>()
+const emit = defineEmits<{
+  (e: 'session-created', id: string): void
+  (e: 'memory-updated'): void
+}>()
 
 // 发起一次聊天并将 route、专家任务、工具事件、来源和最终 token 写入同一条消息。
 const send = async () => {
@@ -308,10 +357,80 @@ const send = async () => {
         m.route = payload
         scrollToBottom()
       },
+      onPlan: (payload) => {
+        // react/plan_execute 的执行计划（含 plan_execute 中模型产出的计划）
+        const steps = payload?.steps || []
+        if (steps.length) messages.value[aiIndex].plan = steps
+        scrollToBottom()
+      },
+      onReflection: (payload) => {
+        // ReAct 循环评估：保留最新一次"继续执行/进入汇总"决策
+        messages.value[aiIndex].reflection = payload
+        scrollToBottom()
+      },
+      onAgentDecision: (payload) => {
+        // Agent 决策时间线：直答 / 计划 / 调用工具，每次决策追加一条
+        const m = messages.value[aiIndex]
+        if (!m.decisions) m.decisions = []
+        m.decisions.push(payload)
+        scrollToBottom()
+      },
+      onThinkingStart: (t) => {
+        const m = messages.value[aiIndex]
+        const item: ThinkingItem = {
+          id: t.id, stream: t.stream, agent: t.agent, label: t.label,
+          phase: t.phase, status: 'running', text: '', step: t.step, retry: t.retry,
+        }
+        if (t.stream === 'multi_agent') {
+          if (!m.expertThinking) m.expertThinking = {}
+          const bucket = m.expertThinking[t.agent || ''] || []
+          // 纠偏使用新 id，同 id 重复 start 视为重置
+          const existing = bucket.findIndex((x) => x.id === t.id)
+          if (existing >= 0) bucket[existing] = item
+          else bucket.push(item)
+          m.expertThinking[t.agent || ''] = bucket
+        } else {
+          if (!m.mainThinking) m.mainThinking = []
+          const existing = m.mainThinking.findIndex((x) => x.id === t.id)
+          if (existing >= 0) m.mainThinking[existing] = item
+          else m.mainThinking.push(item)
+        }
+        scrollAgentOutput(t.id)
+        scrollToBottom()
+      },
+      onThinkingToken: (t) => {
+        const m = messages.value[aiIndex]
+        const bucket = t.stream === 'multi_agent'
+          ? m.expertThinking?.[t.agent || '']
+          : m.mainThinking
+        const item = bucket?.find((x) => x.id === t.id)
+        if (item) {
+          item.text += t.delta
+          scrollAgentOutput(t.id)
+          scrollToBottom()
+        }
+      },
+      onThinkingEnd: (t) => {
+        const m = messages.value[aiIndex]
+        const bucket = t.stream === 'multi_agent'
+          ? m.expertThinking?.[t.agent || '']
+          : m.mainThinking
+        const item = bucket?.find((x) => x.id === t.id)
+        if (item) {
+          item.status = t.status
+          item.reasoning_chars = t.reasoning_chars
+          item.truncated = t.truncated
+          item.latency_ms = t.latency_ms
+          scrollAgentOutput(t.id)
+        }
+      },
+      onMemoryUpdated: () => emit('memory-updated'),
       onMeta: (payload) => {
         const m = messages.value[aiIndex]
         m.outputPolicy = payload?.output_policy || m.memoryContext?.output_policy || {}
         if (payload?.output_policy && m.memoryContext) m.memoryContext.output_policy = payload.output_policy
+        // 检索与否的唯一事实来源：meta.rag_called（实际行为），路由建议不作展示依据
+        if (payload && 'rag_called' in payload) m.ragCalled = !!payload.rag_called
         scrollToBottom()
       },
       onExpertTasks: (payload) => {
@@ -321,16 +440,28 @@ const send = async () => {
         scrollToBottom()
       },
       onValidation: (payload) => {
+        // 保存完整校验负载并在专家步骤上展示具体失败原因（缺失项/相似度），替代统一文案
         const m = messages.value[aiIndex]
+        m.validation = payload
+        const agentLabel: Record<string, string> = {
+          character: '人物关系专家', plot: '情节发展专家',
+          timeline: '时间线专家', locator: '章节定位专家',
+        }
         const results = payload?.reports || {}
         for (const [agent, result] of Object.entries(results) as [string, any][]) {
           const step = m.tools?.find((item) => item.agent === agent)
           if (!step || result.contract_ok) continue
+          const reasons: string[] = []
+          if (result.missing_sections?.length) reasons.push(`缺少：${result.missing_sections.join('、')}`)
+          for (const flag of result.similarity_flags || []) {
+            reasons.push(`与${agentLabel[flag.agent] || flag.agent}重复度过高：${flag.score ?? '?'}`)
+          }
+          const reasonText = reasons.join('；') || '未通过契约校验'
           if (payload?.retry) {
             step.status = 'invalid'
-            step.summary = '纠偏后仍未通过校验'
+            step.summary = `纠偏后仍未通过：${reasonText}`
           } else {
-            step.summary = '报告需要纠偏'
+            step.summary = `报告需要纠偏：${reasonText}`
           }
         }
       },
@@ -496,9 +627,10 @@ onUnmounted(() => {
                 <Icon v-else name="bot" :size="15" />
               </div>
               <div class="min-w-0 flex-1">
-                <div v-if="m.route?.retrieval_skipped" class="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
-                  <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 ring-1 ring-emerald-200">
-                    <Icon name="check" :size="11" /> 本轮无需检索小说原文
+                <!-- 检索徽标以 meta.rag_called（实际行为）为准：路由时刻无法预知 Agent 是否检索 -->
+                <div v-if="m.ragCalled === false" class="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
+                  <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 ring-1 ring-slate-200">
+                    <Icon name="check" :size="11" /> 本轮未检索原文 · 基于上下文与记忆回答
                   </span>
                   <span v-if="m.memoryContext?.memories?.length" class="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-brand-700 ring-1 ring-brand-100">
                     <Icon name="sparkles" :size="11" /> 使用 {{ m.memoryContext.memories.length }} 条记忆
@@ -528,6 +660,111 @@ onUnmounted(() => {
                   </div>
                 </div>
 
+                <!-- 主 Agent 推理（实验能力：展示模型返回的 reasoning，非完整思维链） -->
+                <div
+                  v-if="showThinking && m.mainThinking?.length"
+                  class="mb-2.5 rounded-lg bg-slate-50/80 px-3.5 py-2.5 ring-1 ring-slate-200/70"
+                >
+                  <div class="mb-1.5 flex items-center gap-2 text-[11px] font-semibold tracking-wide text-slate-600">
+                    <Icon name="lightbulb" :size="12" />
+                    主 Agent 推理
+                    <span class="font-normal text-slate-400">· 实验能力</span>
+                  </div>
+                  <ul class="space-y-1">
+                    <li v-for="t in m.mainThinking" :key="t.id">
+                      <details :open="t.status === 'running'">
+                        <summary class="cursor-pointer select-none text-[11px] text-slate-500">
+                          {{ phaseLabel(t.phase) }}<span v-if="t.step"> · 第 {{ t.step }} 步</span>
+                          <span class="ml-1 text-[10px]" :class="t.status === 'running' ? 'text-sky-600' : 'text-ink-faint'">{{ thinkingStatus(t) }}</span>
+                        </summary>
+                        <!-- 纯文本插值：reasoning 不走 Markdown 渲染器，禁止 v-html -->
+                        <pre class="mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded bg-white/80 px-2.5 py-1.5 text-left text-[11px] leading-4 text-slate-600">{{ t.text }}<span v-if="t.status === 'running'" class="stream-caret"></span></pre>
+                      </details>
+                    </li>
+                  </ul>
+                </div>
+                <!-- 专家分析过程（multi_agent，按专家分组折叠） -->
+                <div
+                  v-if="showThinking && m.expertThinking && Object.keys(m.expertThinking).length"
+                  class="mb-2.5 rounded-lg ring-1 ring-slate-200/70 bg-white/70"
+                >
+                  <div class="px-3.5 pt-2.5 pb-1 flex items-center gap-2 text-[11px] font-semibold tracking-wide text-slate-600">
+                    <Icon name="layers" :size="12" />
+                    专家分析过程
+                    <span class="font-normal text-slate-400">· 实验能力</span>
+                  </div>
+                  <div class="space-y-0.5 px-2 pb-2">
+                    <details
+                      v-for="(items, agent) in m.expertThinking"
+                      :key="agent"
+                      class="rounded-md"
+                      :open="items.some((t) => t.status === 'running')"
+                    >
+                      <summary class="cursor-pointer select-none px-2 py-1 text-[11px] text-ink-mute">
+                        {{ items[0]?.label || agent }}
+                        <span class="ml-1 text-[10px]" :class="items.some((t) => t.status === 'running') ? 'text-sky-600' : 'text-ink-faint'">
+                          {{ items.some((t) => t.status === 'running') ? '分析中…' : thinkingStatus(items[items.length - 1]!) }}
+                        </span>
+                      </summary>
+                      <div v-for="t in items" :key="t.id" class="px-2 pb-1">
+                        <pre
+                          v-if="t.text"
+                          class="max-h-52 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-50 px-2 py-1 text-left text-[11px] leading-4 text-slate-600"
+                        >{{ t.text }}<span v-if="t.status === 'running'" class="stream-caret"></span></pre>
+                        <p class="mt-0.5 text-[10px] text-ink-faint">{{ thinkingStatus(t) }}</p>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+                <!-- Agent 决策时间线 -->
+                <div
+                  v-if="m.decisions?.length"
+                  class="mb-2.5 rounded-lg bg-sky-50/60 px-3.5 py-2.5 ring-1 ring-sky-100"
+                >
+                  <div class="mb-1.5 flex items-center gap-2 text-[11px] font-semibold tracking-wide text-sky-700">
+                    <Icon name="lightbulb" :size="12" />
+                    Agent 决策 · {{ m.decisions.length }}
+                  </div>
+                  <ul class="space-y-1">
+                    <li
+                      v-for="(d, di) in m.decisions"
+                      :key="di"
+                      class="flex items-start gap-1.5 text-[11px] leading-4 text-ink-mute"
+                    >
+                      <span
+                        class="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ring-1"
+                        :class="d.action === 'tool_call'
+                          ? 'bg-white text-sky-700 ring-sky-200'
+                          : d.action === 'plan'
+                            ? 'bg-violet-50 text-violet-700 ring-violet-200'
+                            : 'bg-emerald-50 text-emerald-700 ring-emerald-200'"
+                      >
+                        {{ d.action === 'tool_call' ? '调用工具' : d.action === 'plan' ? '制定计划' : '直接回答' }}
+                      </span>
+                      <span class="min-w-0 flex-1 truncate">{{ d.reason }}<span v-if="d.step" class="text-ink-faint"> · 第 {{ d.step }} 步</span></span>
+                    </li>
+                  </ul>
+                </div>
+                <!-- 执行计划（仅模型真实制定时展示：静态执行框架不渲染，决策动态见「Agent 决策」） -->
+                <div
+                  v-if="m.plan?.some((s) => s.action === 'model_step')"
+                  class="mb-2.5 rounded-lg bg-violet-50/60 px-3.5 py-3 ring-1 ring-violet-100"
+                >
+                  <div class="mb-2 flex items-center gap-2 text-[11px] font-semibold tracking-wide text-violet-700">
+                    <Icon name="list" :size="12" />
+                    执行计划
+                  </div>
+                  <ol class="space-y-1 text-[11px] leading-4 text-ink-mute">
+                    <li
+                      v-for="s in m.plan"
+                      :key="s.step"
+                      class="rounded-md bg-white/80 px-2.5 py-1.5"
+                    >
+                      <span class="font-semibold text-ink-soft">{{ s.step }}.</span>
+                      {{ s.purpose }}
+                    </li>
+                  </ol>
+                </div>
                 <!-- 工具调用过程 -->
                 <div
                   v-if="m.tools?.length"
@@ -545,7 +782,7 @@ onUnmounted(() => {
                     >
                       <div class="flex items-center gap-2">
                         <span class="shrink-0 w-4 h-4 flex items-center justify-center">
-                          <Icon v-if="t.status === 'running'" name="loader" :size="12" class="text-brand-500" />
+                          <Icon v-if="t.status === 'running' || t.status === 'fallback_generation'" name="loader" :size="12" class="text-brand-500" />
                           <Icon v-else-if="t.status === 'ok' || t.status === 'corrected'" name="check" :size="12" class="text-emerald-500" />
                           <Icon v-else-if="t.status === 'fallback'" name="check" :size="12" class="text-amber-500" />
                           <Icon v-else name="x" :size="12" class="text-rose-500" />
@@ -565,6 +802,20 @@ onUnmounted(() => {
                       </div>
 </li>
                   </ul>
+                </div>
+
+                <!-- ReAct 循环评估：继续执行 / 进入汇总 -->
+                <div v-if="m.reflection?.decision" class="mb-2 flex items-center gap-2 text-[11px] text-ink-faint">
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 ring-1"
+                    :class="m.reflection.decision === 'continue'
+                      ? 'bg-amber-50 text-amber-700 ring-amber-200'
+                      : 'bg-emerald-50 text-emerald-700 ring-emerald-200'"
+                  >
+                    <Icon :name="m.reflection.decision === 'continue' ? 'loader' : 'check'" :size="11" />
+                    {{ m.reflection.decision === 'continue' ? `第 ${m.reflection.step ?? '?'} 步后继续执行` : '证据评估完成' }}
+                    <span v-if="m.reflection.reason" class="font-normal">· {{ m.reflection.reason }}</span>
+                  </span>
                 </div>
 
                 <template v-if="m.content">
@@ -655,6 +906,14 @@ onUnmounted(() => {
             @click="memoryMode = memoryMode === 'auto' ? 'off' : 'auto'"
           >
             {{ memoryMode === 'auto' ? '自动记忆已开启' : '自动记忆已关闭' }}
+          </button>
+          <button
+            type="button"
+            class="rounded-full px-2 py-0.5 ring-1 ring-black/[0.08] transition-colors hover:text-brand-600 hover:ring-brand-200"
+            :class="showThinking ? 'bg-sky-50/70 text-sky-700 ring-sky-100' : 'bg-black/[0.03]'"
+            @click="toggleThinking"
+          >
+            {{ showThinking ? '思考过程已开启' : '思考过程已关闭' }}
           </button>
         </div>
       </div>

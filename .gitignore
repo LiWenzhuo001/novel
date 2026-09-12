@@ -89,10 +89,13 @@ PROJECT.md
 tutorial.html
 
 
-# 测试文件（仅本地运行，不入库）
-backend/tests/
-frontend/src/**/*.test.ts
-frontend/src/**/*.spec.ts
+# 测试文件：2026-09-12 起后端测试入库（CI 门禁依赖）；前端测试待有文件再启用
+# frontend/src/**/*.test.ts
+# frontend/src/**/*.spec.ts
 
 # 部署运维文档（含服务器 IP 等敏感信息）
 DEPLOY.md
+
+# 本地可再生残留（工具缓存 / Vite 崩溃转储 / dev 日志）
+frontend/vite.config.ts.timestamp-*
+frontend/vite-dev.*.log

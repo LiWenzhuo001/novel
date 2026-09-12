@@ -9,7 +9,7 @@
 
 - **小说导入与索引**：上传 PDF / Word(.docx) / TXT / MD；清除 BOM、控制字符和多余空白，按章节优先、字符数兜底切分，记录卷/章、页码、全书片段号、章节内片段号和字符区间；索引任务带状态、租约和重启恢复。
 - **小说问答**：混合向量 + 中文词法召回（jieba/pg_trgm）+ RRF 融合 + cross-encoder/远程 rerank 重排；按策略补充同文件同章节相邻片段，答案通过独立 SSE `sources` 事件返回原文片段和章节定位。
-- **Agent 执行闭环**：所有问答统一使用 `strategy=auto`、`direct`、`multi_expert`、`react` 或 `plan_execute`；复杂问题先拆成四个职责互斥的专家子任务，再并发流式分析、校验重复度、按需纠偏一次并由 Supervisor 去重汇总。
+- **Agent 执行闭环**：系统本体是 ReAct 自主 Agent——模型基于用户请求、会话历史、长期记忆与已有工具结果，自主决定直接回答、调用 `retrieve_novel`（外置小说知识库）、`get_chapter_context` 或 `calculator`；复杂任务可自发先生成计划（`plan_execute` 强制先计划）。`auto` 为混合路由：复杂小说分析进入 multi_expert 固定流水线（共享检索 + 四专家 + 校验纠偏 + 汇总），普通问题走自主决策循环；`direct` 为短路径档（步数预算 2，优先直答，仍允许一次自主检索）。明确小说事实题由查询准备模块标注建议检索，失败/低置信场景保守兜底预检索；RAG 无结果或失败时不得以记忆或猜测冒充小说事实。
 - **记忆自动闭环**：会话前召回摘要/三层记忆，回答后异步生成摘要和稳定事实记忆，并支持用户级隔离、查看和删除。
 - **LLM 语义路由**：Query Preparation 每轮只调用一次 LLM，同时判断是否需要小说 RAG；Route Node 负责低置信度、强小说信号和失败场景的保守兜底。
 - **正式用户级多租户**：支持 users 表注册/登录、PBKDF2 密码哈希、JWT Bearer 认证；聊天、知识库按 `user_id` 行级隔离。
@@ -35,10 +35,10 @@ E:/novel/
 │   │   ├── api/             # chat / knowledge / auth 路由
 │   │   ├── models/          # Pydantic schemas
 │   │   ├── db/              # PostgreSQL + pgvector 数据层（engine / session / ORM 模型）
-│   │   │   ├── __init__.py  # engine、get_db、init_db（启用 vector 扩展 + 建表 + HNSW 索引）
+│   │   │   ├── __init__.py  # engine、get_db、启动期就绪检查（零 DDL，迁移权威在 Alembic）
 │   │   │   └── models.py    # Embedding / KnowledgeFile / ChatSession / ChatMessage
 │   │   ├── config.py        # 配置（含 PostgreSQL 连接与 EMBED_DIM）
-│   │   └── main.py          # 入口（lifespan 中 init_db）
+│   │   └── main.py          # 入口（lifespan 中做连接/迁移版本/维度就绪检查，fail-fast）
 │   ├── data/                # 上传原文（已在 .gitignore）
 │   ├── initdb/              # 01-extensions.sql：首次启动启用 vector 扩展
 │   ├── requirements.txt
@@ -115,7 +115,9 @@ USER_AUTH_ENABLED=true
 JWT_SECRET=请替换为高强度随机串
 JWT_ACCESS_TOKEN_MINUTES=1440
 
-# Agent 执行策略：auto / direct / multi_expert / react / plan_execute
+# Agent 执行策略：auto（混合路由：复杂分析→multi_expert，其余→自主 react）/ direct（短路径）/ multi_expert / react / plan_execute
+# max_steps 约束 Agent 决策循环的工具迭代预算（direct=2，react/plan_execute=AGENT_MAX_STEPS，plan_execute +1 计划轮）；
+# multi_expert 是固定流水线，不受它约束。
 AGENT_MAX_STEPS=6
 AGENT_TOOL_TIMEOUT=20
 AGENT_MAX_EXPERTS=4
@@ -130,7 +132,10 @@ NOVEL_CONTEXT_K=10
 NOVEL_NEIGHBOR_WINDOW=1
 ```
 
-> 后端启动时会自动 `CREATE EXTENSION IF NOT EXISTS vector`（docker 环境下由 `initdb/01-extensions.sql` 以超级用户预建）、`CREATE TABLE` 并为 `embeddings.embedding` 建 HNSW 索引；在 PostgreSQL 未就绪时会**重试等待**，不会因启动顺序问题直接崩溃。
+> 后端启动**不执行任何 schema DDL**——表结构唯一来源是 Alembic（`backend/alembic/versions/`）。
+> 首次部署顺序：`initdb/01-extensions.sql` 安装扩展（全新数据卷自动执行）→ `alembic upgrade head` → 启动后端。
+> 启动期只做就绪检查（连接 / `alembic_version` 与 head 一致 / 向量维度匹配），任一失败即启动失败；
+> `/health` 在未就绪时返回 503，compose 健康检查据此阻止 frontend 启动。
 
 ### 2. 前端（Vue3 + Vite）
 
@@ -156,17 +161,21 @@ npm run build                             # 生产构建产物位于 dist/
 ```
 Document Loaders → 章节感知 RecursiveCharacterTextSplitter
        → pgvector + 中文词法/FTS + RRF + reranker
-       → Query Preparation（改写 + LLM 语义路由）→ LangGraph Agent Router → 条件 Shared Retrieval
-              ├── direct → Supervisor
-              ├── multi_expert → 专家任务分解 → 四专家并发 → 契约/重复校验 → 可选纠偏 → Supervisor
-              └── react / plan_execute → Tool Runtime → Reflect → Supervisor
+       → Query Preparation（改写 + 检索建议，needs_retrieval 仅作建议字段）
+              → LangGraph Agent Router（三档检索政策 required/optional/forbidden）
+              ├── multi_expert（显式/复杂分析）→ 共享检索 → 专家分派 → 四专家并发 → 校验/纠偏 → Supervisor
+              ├── required 兜底（prep 失效/低置信/强信号）→ 预检索 → Agent 决策循环
+              └── optional / forbidden（auto 普通路径、direct、react、plan_execute）
+                     → Agent 决策循环：observe → decide（agent_decision 事件）→ act（ToolRegistry）→ reflect
+                           ⇄ 模型自主选择 retrieve_novel / get_chapter_context / calculator 或直接回答
+                     → Supervisor → Summary
        → 专家 tool_token + 最终 token → SSE
 ```
 
 - **解析与入库**：`services/kb_service.py` 复用 LangChain loader，交给 `services/novel_service.py` 章节感知切分，统一写入 pgvector，并记录文件状态、租约和重试次数。
 - **领域检索**：`core/rag.py` 的向量与 FTS 分支都强制 `user_id` 过滤；小说命中后按 `file_id + chapter_no + chunk_no` SQL 范围查询相邻片段。
-- **Agent 编排**：`app/agent/` 使用 LangGraph 管理 `route → plan → retrieve → dispatch → experts → validate/refine → supervisor`；原始会话 Query 先被改写为独立检索问题，再由 Dispatcher 生成四个专属子任务，专家仍共享同一次 RAG 证据。
-- **流式与回退**：`expert_tasks` 先展示本轮分工，专家通过独立 `tool_token` 交错输出；报告不符合契约或相似度超过阈值时只纠偏一次，部分失败仍汇总成功报告，全部无效则降级到 direct。
+- **Agent 编排**：`app/agent/` 以 ReAct 决策循环为本体（`execute → reflect` 回边），工具结果经 ToolMessage 回灌，模型每轮可见全部历史工具结果；`file_id` 由服务端状态注入不进模型 schema。SSE 事件含 `route`（含 `retrieval_policy`）、`plan`、`agent_decision`（action=answer/plan/tool_call + reason）、`tool_start/tool_token/tool_end`、`observation`、`reflection`、`sources`、`validation`、`meta`（`needs_retrieval` 表示实际是否执行过 RAG，附 `rag_call_count`、`stop_reason`）。仅在真实检索后发送非空 `sources`。
+- **流式与回退**：`expert_tasks` 先展示本轮分工，专家通过独立 `tool_token` 交错输出；报告不符合契约或相似度超过阈值时只纠偏一次，部分失败仍汇总成功报告，全部无效则降级。
 
 ## 数据库设计（PostgreSQL + pgvector，单库统一）
 
@@ -216,6 +225,25 @@ python scripts/run_rag_eval.py --eval evals/rag_queries.json --output evals/resu
 - `reindex_file.py` 先生成全部新向量，再在单个数据库事务中替换旧片段；失败时旧索引保持可用。
 - `run_rag_eval.py` 输出 Recall@5/10、Precision@5、MRR@10、nDCG@10、无结果率和延迟 JSON/Markdown 报告；正式验收要求至少 40 条 `validated=true` 的人工标注。
 - 来源分数不是 Recall。主命中展示向量/词法/混合/重排分，相邻片段展示“上下文补充”。
+## Agent 思考流（实验能力）
+
+Agent 决策循环与专家流水线可实时展示模型返回的 `reasoning_content`（原始推理），SSE 事件为 `thinking_start / thinking_token / thinking_end`，负载含 `stream`（`main_agent` / `multi_agent`）、`phase`（`decide` / `plan` / `reasoning`）、`id`（主 Agent 为 `agent-step-N`，专家为 `expert-<name>[-retryN]`）与结束统计（`reasoning_chars`、`truncated`、`latency_ms`）。
+
+- **安全边界**：reasoning 不进入最终答案、不写入数据库、不参与 `[S#]` 引用、不进日志原文（只记长度/耗时）；单轮累计 8000 字符截断。前端以纯文本插值渲染，不经过 Markdown/HTML 渲染器。
+- **两级开关**：`EXPOSE_RAW_REASONING`（服务端，默认 **false**，决定 reasoning 原文是否过网络；false 时只发统计）；前端「思考过程已开启/关闭」按钮（localStorage，只控制已收到内容的渲染）。
+- **生效条件**：`AGENT_REASONING_ENABLED=true` 且 `AGENT_REASONING_MODEL` 指向推理模型（如 deepseek-reasoner）。留空回退主模型普通模式——特性休眠，UI 不出现空思考卡片。`answer` 用途强制关闭 thinking。
+- **供应商兼容**：reasoning 提取兼容 `additional_kwargs.reasoning_content` 与 content blocks `reasoning/thinking`；tool_call 分片按 index 聚合，args JSON 非法时回退空参数交由工具校验兜底；推理模型能力错误（400/unknown field/404）自动降级主模型并写入进程内缓存，超时/限流/网络错误不切模型。`EFFORT/BUDGET` 仅 OpenAI 系 provider 发送。
+- **已知边界**：UI 文案为「主 Agent 推理 / 专家分析过程」而非"完整思维链"——不同模型可能返回详细推理、简短摘要或空内容；`roleplay` 管线本期不接入思考流；`reflect` 为规则节点，`AGENT_REFLECT_REASONING_ENABLED` 暂不生效。`meta.needs_retrieval` 已标注 deprecated（= `meta.rag_called`，实际是否执行过 RAG），路由建议看 `route.needs_retrieval`。
+
+## 专家报告状态机与校验口径
+
+专家报告状态：`ok`（含 `recovered` 补生成恢复）/ `fallback_generation`（正文为空时的主模型补生成过程事件）/ `empty_output`（补生成仍为空，不进入契约纠偏，由 Supervisor 降级汇总）/ `error / timeout / cancelled` / `invalid`（纠偏后仍未通过，集中校验判定）。
+
+- **空输出 ≠ 契约违规**：reasoning-only 或静默空回包不是格式问题，禁止进入纠偏——先由主模型（全局关 thinking）一次性补生成最终报告，成功则照常进入校验。
+- **相似度口径**：报告间重复度按"相似度口径"归一化（剔除 `[S#]` 标记、章节标题、页码/片段/引用等公共素材）后再算字符 3-gram Jaccard；契约的长度判定用原口径，两者分离。`locator`（表格结构）不参与正文相似度竞争，契约校验照常。
+- **校验原因透传**：`validation` 事件携带每专家的 `missing_sections / similarity_flags(含分对分数)`，前端展示具体原因（如「缺少：[S#] 引用」「与时间线专家重复度过高：0.81」）而非统一文案。
+- **预算关系**：报告输出预算 = `AGENT_EXPERT_MAX_TOKENS`，思考预留 = `AGENT_REASONING_BUDGET`，实际 `max_tokens` = 两者之和（推理模型的思维链计入输出上限）。
+
 ## Agent 策略与数据库迁移
 
 `/api/chat` 请求使用 `strategy`：`auto`、`direct`、`multi_expert`、`react` 或 `plan_execute`，并可通过 `max_steps` 限制执行预算。流式响应包含 `route`、`plan`、`sources`、`expert_tasks`、`tool_start`、`tool_token`、`tool_end`、`validation`、`reflection`、`token` 和 `meta` 事件。
@@ -234,20 +262,38 @@ docker compose up --build
 ```
 
 将同时启动 **PostgreSQL（pgvector，:5432）**、后端（:8000）与前端（H5 构建产物由 nginx 提供并反向代理 `/api`）。
-后端通过 `depends_on: postgres: condition: service_healthy` 与启动重试逻辑保证在 PostgreSQL 就绪后再建表；`embeddings` 表的 HNSW 索引会在首次启动时创建。Compose 默认把 PostgreSQL 和后端端口绑定到 `127.0.0.1`，生产环境建议只暴露前端或由反向代理统一入口。
+首次部署（或拉取新代码后）先执行迁移再启动服务：`docker compose run --rm backend alembic upgrade head`。
+后端启动期只做就绪检查（连接 / 迁移版本 / 向量维度），未就绪时 `/health` 返回 503，`depends_on: service_healthy` 会阻止 frontend 启动。Compose 默认把 PostgreSQL 和后端端口绑定到 `127.0.0.1`，生产环境建议只暴露前端或由反向代理统一入口。
 
-## 数据库迁移
+## 数据库迁移（Alembic 唯一权威）
 
-项目已加入 Alembic 基础配置，首个迁移位于 `backend/alembic/versions/20260802_0001_initial_pgvector_schema.py`。
+业务 schema 的**唯一变更来源是 Alembic**：应用启动零 DDL，只做就绪检查；
+PostgreSQL 扩展（vector / pg_trgm / pg_search）由 `backend/initdb/01-extensions.sql`
+在全新数据卷首次初始化时安装，属于基础设施，与业务迁移分离。
 
 ```bash
 cd backend
-alembic upgrade head
+alembic current            # 查看数据库当前版本
+alembic upgrade head       # 升级到最新（首次部署 / 拉取新代码后）
+alembic history            # 查看迁移链
 ```
 
-当前迁移头为 `20260824_0005_rag_retrieval_quality.py`，新增中文 trigram 索引和知识文件索引版本字段。`app.db.init_db()` 仍保留幂等建表和补列逻辑；正式部署建议以 Alembic 为准管理结构变更。
+当前迁移头为 `20260912_0016_schema_reconciliation`（把历史 init_db 带外创建的结构收敛进迁移链：
+偏好唯一索引、7 个声明索引、多租户字段 NOT NULL 收紧，并清理 LangGraph 实验遗留表）。
+此后所有结构变更一律新增 revision（Expand/Contract 分阶段），禁止应用启动自动补列。
+
+运维要点：
+- **迁移前备份**：`docker compose exec postgres pg_dump -U job_agent job_agent > backup_$(date +%F).sql`；
+- **迁移后验证**：`python scripts/check_schema.py`（ORM vs 数据库对账，漂移退出码 1）；
+- **失败恢复**：可逆迁移 `alembic downgrade -1`；不可逆迁移用备份恢复；应用回滚不回滚数据库；
+- **并发保护**：迁移全程持有 PostgreSQL advisory lock，并发执行会被拒绝；
+- **向量维度变更**：改 `EMBED_DIM` → 备份 → 维度专用迁移 → 全量重索引（`scripts/reindex_file.py`）；
+  启动期维度检查不一致会直接拒绝启动。
 
 ## 实施假设与开源复用依据
+
+> 命名沿革：数据库名/用户（`job_agent`）、容器名与前端历史存储键源自项目前身"求职助手 Agent"。
+> 系统已收敛为小说问答， renaming 仅剩观感收益且涉及数据迁移，故保留原名——它们只是标识符，与功能无关。
 
 实施基于以下假设：小说文本以章节标题和自然段为主要结构；当前规模可由单一 PostgreSQL 承载；人物关系和时间线首先要求“有原文证据的分析”，暂不要求持久化知识图谱或图可视化。
 

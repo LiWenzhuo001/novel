@@ -42,6 +42,8 @@ class RewriteResult:
     entities: list[str] = field(default_factory=list)
     evidence_focus: list[str] = field(default_factory=list)
     confidence: float = 0.0
+    # Agent-first 语义：仅作为 Agent 决策的建议上下文，不直接触发检索；
+    # 是否调用 RAG 由执行环里的模型决定（required 兜底场景除外）。
     needs_retrieval: bool = True
     answer_mode: AnswerMode = "novel_evidence"
     retrieval_reason: str = "query_preparation_failed"

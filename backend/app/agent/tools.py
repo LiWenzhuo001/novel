@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import json
 import operator
 import time
 from dataclasses import dataclass
@@ -13,8 +14,11 @@ from langchain_core.tools import tool
 from app.agent.types import ToolResult
 from app.config import settings
 from app.core.context import get_memory_session
+from app.core.logging_config import get_logger
 from app.core.rag import retrieve_novel_context
 from app.services import memory_service
+
+log = get_logger("agent_tools")
 
 ToolHandler = Callable[..., Awaitable[ToolResult]]
 
@@ -52,6 +56,7 @@ class ToolRegistry:
         try:
             result = await asyncio.wait_for(self._handlers[name](**kwargs), timeout=spec.timeout_seconds)
         except asyncio.TimeoutError:
+            log.error("tool.failed", tool=name, error_code="tool_timeout", output="工具执行超时")
             return ToolResult(
                 status="timeout",
                 error_code="tool_timeout",
@@ -59,6 +64,9 @@ class ToolRegistry:
                 tool=name,
             )
         except Exception as exc:  # noqa: BLE001
+            # 失败必须带消息落日志：此前异常类型名之外的信息全部丢失，
+            # 线上只能看到 "RuntimeError" 这类空指针式线索，无法定位根因。
+            log.error("tool.failed", tool=name, error_code=type(exc).__name__, output=str(exc)[:200])
             return ToolResult(
                 status="error",
                 error_code=type(exc).__name__,
@@ -265,6 +273,56 @@ def _register_memory_tools(registry: ToolRegistry) -> None:
     registry.register(ToolSpec("add_memory", "保存一条长期记忆", timeout_seconds=settings.memory_task_timeout), _add_memory_impl)
     registry.register(ToolSpec("update_memory", "更新一条长期记忆", timeout_seconds=settings.memory_task_timeout), _update_memory_impl)
     registry.register(ToolSpec("delete_memory", "删除一条长期记忆", timeout_seconds=settings.memory_task_timeout), _delete_memory_impl)
+
+
+# ===== ReAct 执行环的模型侧工具（bind_tools 用；执行仍走 registry 以复用超时/白名单） =====
+
+
+def _react_payload(result: ToolResult) -> str:
+    """把工具结果压缩成模型可读的 JSON 文本。仅用于模型侧描述；状态证据以 registry 返回值为准。"""
+    if result.status != "ok":
+        return json.dumps({"status": result.status, "error": result.error_code}, ensure_ascii=False)
+    output = result.output if isinstance(result.output, dict) else {}
+    if "evidence" in output:
+        return json.dumps({
+            "status": "ok",
+            "evidence": [
+                {
+                    "id": item.get("source", {}).get("id"),
+                    "source": item.get("source", {}).get("source"),
+                    "chapter": item.get("source", {}).get("chapter"),
+                    "content": item.get("content", ""),
+                }
+                for item in output.get("evidence", [])
+            ],
+        }, ensure_ascii=False)
+    return json.dumps({"status": "ok", **output}, ensure_ascii=False, default=str)
+
+
+@tool("retrieve_novel")
+async def react_retrieve_novel(query: str) -> str:
+    """外置小说知识库检索：仅在缺少可靠小说证据（人物、关系、情节、时间线、章节、原文核验）且上下文不足时调用。query 填写你认为最可能命中的检索词，可换用新的表述、人物名或事件名。"""
+    return _react_payload(await _retrieve_novel(query=query))
+
+
+@tool("get_chapter_context")
+async def react_chapter_context(query: str) -> str:
+    """检索命中章节的相邻前后文片段。仅在已有命中不足以理解前因后果时调用，不是固定后置步骤。"""
+    return _react_payload(await _chapter_context(query=query))
+
+
+@tool("calculator")
+async def react_calculator(expression: str) -> str:
+    """执行受限数值计算（加减乘除、取模、乘方）。expression 填写算式，如 (1908-1912)*12。"""
+    return _react_payload(await _calculator(expression=expression))
+
+
+REACT_TOOL_SPECS = (react_retrieve_novel, react_chapter_context, react_calculator)
+REACT_TOOL_LABELS = {
+    "retrieve_novel": "补充检索",
+    "get_chapter_context": "章节上下文",
+    "calculator": "数值计算",
+}
 
 
 registry = build_default_registry()

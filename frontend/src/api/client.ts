@@ -4,7 +4,7 @@
 // 所有请求走相对路径 /api，由 vite dev proxy 或 nginx 转发到后端。
 
 const BASE = '/api'
-const TOKEN_KEY = 'job_agent_api_token'
+const TOKEN_KEY = 'novel_rag_api_token'
 
 export const getApiToken = () => localStorage.getItem(TOKEN_KEY) || ''
 export const setApiToken = (token: string) => {
@@ -265,6 +265,41 @@ export const getMemoryContext = (sessionId: string, fileId?: string | null) => {
 export const deleteMemory = (memoryId: string) => request(`/memories/${encodeURIComponent(memoryId)}`, 'DELETE')
 
 // ---------- 流式对话（H5 浏览器下用 fetch 解析 SSE）----------
+// 思考流事件负载：reasoning 原文仅在服务端 EXPOSE_RAW_REASONING=true 时下发；
+// 前端"显示思考过程"开关只控制已收到内容是否渲染。
+export type ThinkingStream = 'main_agent' | 'multi_agent'
+export type ThinkingPhase = 'decide' | 'plan' | 'reflect' | 'reasoning'
+
+export interface ThinkingStart {
+  stream: ThinkingStream
+  id: string
+  agent?: string
+  label?: string
+  phase: ThinkingPhase
+  step?: number
+  retry?: number
+  status?: string
+}
+
+export interface ThinkingToken {
+  stream: ThinkingStream
+  id: string
+  agent?: string
+  phase: ThinkingPhase
+  delta: string
+}
+
+export interface ThinkingEnd {
+  stream: ThinkingStream
+  id: string
+  agent?: string
+  phase: ThinkingPhase
+  status: 'completed' | 'error' | 'timeout' | 'cancelled' | 'corrected'
+  reasoning_chars?: number
+  truncated?: boolean
+  latency_ms?: number
+}
+
 export interface StreamHandlers {
   onSession?: (id: string) => void
   onMemoryContext?: (value: MemoryContext & { count?: number }) => void
@@ -272,6 +307,10 @@ export interface StreamHandlers {
   onRoute?: (value: any) => void
   onMeta?: (value: any) => void
   onPlan?: (value: any) => void
+  onAgentDecision?: (value: any) => void
+  onThinkingStart?: (value: ThinkingStart) => void
+  onThinkingToken?: (value: ThinkingToken) => void
+  onThinkingEnd?: (value: ThinkingEnd) => void
   onStepStart?: (value: any) => void
   onObservation?: (value: any) => void
   onReflection?: (value: any) => void
@@ -283,7 +322,6 @@ export interface StreamHandlers {
   onToolStart?: (t: any) => void
   onToolToken?: (t: any) => void
   onToolEnd?: (t: any) => void
-  onArtifact?: (a: any) => void
   onDone?: () => void
   onError?: (e: any) => void
 }
@@ -295,6 +333,10 @@ const JSON_EVENT_HANDLERS: Record<string, keyof StreamHandlers> = {
   route: 'onRoute',
   meta: 'onMeta',
   plan: 'onPlan',
+  agent_decision: 'onAgentDecision',
+  thinking_start: 'onThinkingStart',
+  thinking_token: 'onThinkingToken',
+  thinking_end: 'onThinkingEnd',
   step_start: 'onStepStart',
   observation: 'onObservation',
   reflection: 'onReflection',
@@ -304,7 +346,6 @@ const JSON_EVENT_HANDLERS: Record<string, keyof StreamHandlers> = {
   tool_start: 'onToolStart',
   tool_token: 'onToolToken',
   tool_end: 'onToolEnd',
-  artifact: 'onArtifact',
   error: 'onError',
 }
 

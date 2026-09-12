@@ -231,15 +231,19 @@ def split_novel_documents(
 
         # 每个分块都保留全书片段号和章节内片段号，供引用和邻居扩展使用。
         for start, end, chapter, chapter_no, chapter_kind in sections:
-            section = cleaned[start:end].strip()
+            raw_section = cleaned[start:end]
+            section = raw_section.strip()
             if not section:
                 continue
+            # strip() 剥掉的前导空白必须补回偏移，否则该 section 内所有
+            # char_start/char_end 整体前移，用户看到的引文定位是错的。
+            lead = len(raw_section) - len(raw_section.lstrip())
             for doc in splitter.create_documents([section], metadatas=[base_meta]):
                 chunk_no += 1
                 counter_key = (chapter_no, chapter)
                 chapter_chunk_counts[counter_key] = chapter_chunk_counts.get(counter_key, 0) + 1
                 local_start = int(doc.metadata.get("start_index", 0))
-                char_start = start + local_start
+                char_start = start + lead + local_start
                 doc.metadata.update({
                     "domain": "novel",
                     "source": filename,

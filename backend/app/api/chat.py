@@ -30,6 +30,16 @@ router = APIRouter()
 _memory_tasks: set[asyncio.Task] = set()
 
 
+def _reap_memory_task(task: asyncio.Task) -> None:
+    """取回游离任务的异常再丢弃引用；否则任务内任何失败都不可见。"""
+    _memory_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        log.error("chat.memory_background_task_failed", error=f"{type(exc).__name__}: {exc}"[:300])
+
+
 def _to_lc_messages(history: List[dict]) -> List[BaseMessage]:
     """把持久化的简化消息转换为 LangChain 消息对象。"""
     messages: List[BaseMessage] = []
@@ -347,16 +357,6 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                         "output_policy": memory_context.get("output_policy", {}),
                         "count": len(memory_context.get("memories", [])),
                     })
-                rewrite = await rewrite_query(
-                    req.message,
-                    history_messages,
-                    memory_context=memory_context,
-                )
-                if await request.is_disconnected():
-                    metrics.incr("sse_cancellations")
-                    log.info("chat.novel_client_disconnected", session_id=session_id)
-                    return
-
                 fallback_reason = ""
                 if req.strategy == "roleplay":
                     # 角色扮演：跳过 Query 改写与 RAG 图，走专属管线
@@ -386,6 +386,7 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                                 )
                             yield _sse_event(event_type, payload)
                 else:
+                    # Query 改写只做一次且仅在 Agent 路径需要；角色扮演上面已跳过。
                     rewrite = await rewrite_query(
                         req.message,
                         history_messages,
@@ -422,7 +423,7 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                         if event_type == "sources":
                             reply_sources = payload or []
                             yield _sse_event("sources", reply_sources)
-                        elif event_type in {"route", "plan", "step_start", "observation", "reflection", "expert_tasks", "validation"}:
+                        elif event_type in {"route", "plan", "step_start", "observation", "reflection", "expert_tasks", "validation", "agent_decision", "thinking_start", "thinking_token", "thinking_end"}:
                             yield _sse_event(event_type, payload)
                         elif event_type == "tool_start":
                             yield _sse_event("tool_start", payload)
@@ -495,7 +496,7 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
 
                 task = asyncio.create_task(update_memory_background())
                 _memory_tasks.add(task)
-                task.add_done_callback(_memory_tasks.discard)
+                task.add_done_callback(_reap_memory_task)
                 # The actual extraction is intentionally detached; this event lets the UI
                 # refresh/label the memory panel without delaying the answer stream.
                 yield _sse_event("memory_updated", {"status": "scheduled"})

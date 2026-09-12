@@ -8,24 +8,98 @@ from typing import Any
 
 import json
 
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.contracts import EXPERT_CONTRACTS, SPECIALIST_ORDER, SpecialistContract
 from app.agent.dispatcher import dispatch_expert_tasks
 from app.agent.router import route_query
-from app.agent.tools import MEMORY_AGENT_TOOLS, MEMORY_AGENT_TOOL_SPECS, registry
-from app.agent.types import AgentState, DEFAULT_OUTPUT_POLICY, Strategy
+from app.agent.tools import MEMORY_AGENT_TOOLS, MEMORY_AGENT_TOOL_SPECS, REACT_TOOL_LABELS, REACT_TOOL_SPECS, _react_payload, registry
+from app.agent.types import AgentState, DEFAULT_OUTPUT_POLICY, Strategy, ToolResult
 from app.agent.validation import validate_reports
 from app.config import settings
 from app.core.context import get_memory_session, set_memory_session
-from app.core.llm import get_llm
+from app.core.llm import LLMPurpose, ModelTurnBuilder, astream_model_turn, get_llm, tool_call_field
 from app.core.logging_config import get_logger
 from app.core.metrics import metrics
 
 log = get_logger("agent_runtime")
 _EMPTY_MESSAGE = "当前小说知识库中没有检索到足以回答该问题的原文。请确认作品已完成索引，或补充人物名、事件名、章节等线索。"
 _STREAM_DONE = object()
+# 单轮 reasoning 累计字符上限：防异常模型无限输出（reasoning 只展示不持久化）。
+_THINKING_MAX_CHARS = 8000
+
+
+class _ThinkingSpan:
+    """thinking 流生命周期助手：start/token/end 各至多一次，覆盖取消与异常收尾。
+
+    reasoning 原文是否下发由 settings.expose_raw_reasoning 决定；
+    统计（字符数/截断）无论如何都随 thinking_end 上报。
+    """
+
+    def __init__(
+        self,
+        state: AgentState,
+        *,
+        stream: str,
+        span_id: str,
+        phase: str,
+        agent: str | None = None,
+        label: str | None = None,
+        step: int | None = None,
+        retry: int | None = None,
+    ) -> None:
+        self._state = state
+        self._stream = stream
+        self._id = span_id
+        self._phase = phase
+        self._agent = agent
+        self._label = label
+        self._step = step
+        self._retry = retry
+        self._started = False
+        self._ended = False
+        self.chars = 0
+        self.truncated = False
+        self.started_at = time.perf_counter()
+
+    def _payload(self, **extra: Any) -> dict[str, Any]:
+        payload: dict[str, Any] = {"stream": self._stream, "id": self._id, "phase": self._phase}
+        if self._agent is not None:
+            payload["agent"] = self._agent
+        if self._label is not None:
+            payload["label"] = self._label
+        if self._step is not None:
+            payload["step"] = self._step
+        if self._retry is not None:
+            payload["retry"] = self._retry
+        payload.update(extra)
+        return payload
+
+    async def token(self, text: str) -> None:
+        if self._ended or not text:
+            return
+        if not self._started:
+            self._started = True
+            await _emit(self._state, "thinking_start", self._payload(status="running"))
+        if self.chars >= _THINKING_MAX_CHARS:
+            self.truncated = True
+            return
+        self.chars += len(text)
+        if settings.expose_raw_reasoning:
+            await _emit(self._state, "thinking_token", self._payload(delta=text))
+
+    async def end(self, status: str) -> None:
+        if self._ended or not self._started:
+            self._ended = True
+            return
+        self._ended = True
+        await _emit(self._state, "thinking_end", self._payload(
+            status=status,
+            reasoning_chars=self.chars,
+            truncated=self.truncated,
+            latency_ms=round((time.perf_counter() - self.started_at) * 1000, 1),
+        ))
 
 
 async def _emit(state: AgentState, event_type: str, data: Any) -> None:
@@ -43,21 +117,19 @@ def _plan(strategy: Strategy) -> list[dict[str, Any]]:
             {"step": 4, "action": "validate_reports", "purpose": "检查职责契约与报告重复度"},
             {"step": 5, "action": "supervisor", "purpose": "去重、消解冲突并汇总最终答案"},
         ]
-    if strategy is Strategy.REACT:
-        return [
-            {"step": 1, "action": "retrieve_novel", "purpose": "检索与问题直接相关的小说原文"},
-            {"step": 2, "action": "reflect", "purpose": "判断证据是否足以回答"},
-            {"step": 3, "action": "supervisor", "purpose": "生成带引用的最终答案"},
-        ]
     if strategy is Strategy.PLAN_EXECUTE:
         return [
-            {"step": 1, "action": "retrieve_novel", "purpose": "召回主要证据"},
-            {"step": 2, "action": "get_chapter_context", "purpose": "补充命中章节的前后文"},
-            {"step": 3, "action": "reflect", "purpose": "检查证据完整性"},
-            {"step": 4, "action": "supervisor", "purpose": "生成带引用的最终答案"},
+            {"step": 1, "action": "make_plan", "purpose": "模型依据上下文产出执行计划"},
+            {"step": 2, "action": "react_loop", "purpose": "模型自主决定检索、计算或直接回答"},
+            {"step": 3, "action": "supervisor", "purpose": "生成带引用的最终答案"},
+        ]
+    if strategy is Strategy.DIRECT:
+        return [
+            {"step": 1, "action": "react_loop", "purpose": "短路径决策：模型自主决定检索或直接回答"},
+            {"step": 2, "action": "supervisor", "purpose": "生成最终答案"},
         ]
     return [
-        {"step": 1, "action": "retrieve_novel", "purpose": "召回答案所需的小说原文"},
+        {"step": 1, "action": "react_loop", "purpose": "模型自主决定是否检索、计算或直接回答"},
         {"step": 2, "action": "supervisor", "purpose": "生成带引用的最终答案"},
     ]
 
@@ -118,7 +190,7 @@ async def _route_node(state: AgentState) -> dict[str, Any]:
         "requested_strategy": state.get("requested_strategy", "auto"),
         "max_steps": max_steps,
         "max_experts": settings.agent_max_experts,
-        "retrieval_skipped": not decision.needs_retrieval,
+        "retrieval_skipped": decision.retrieval_policy != "required",
         "llm_needs_retrieval": decision.llm_needs_retrieval,
         "routing_override": decision.routing_override,
         "routing_override_reason": decision.routing_override_reason,
@@ -132,6 +204,7 @@ async def _route_node(state: AgentState) -> dict[str, Any]:
         "max_steps": max_steps,
         "max_experts": settings.agent_max_experts,
         "needs_retrieval": decision.needs_retrieval,
+        "retrieval_policy": decision.retrieval_policy,
         "retrieval_reason": decision.retrieval_reason,
         "answer_mode": decision.answer_mode,
         "llm_needs_retrieval": decision.llm_needs_retrieval,
@@ -148,26 +221,32 @@ async def _route_node(state: AgentState) -> dict[str, Any]:
 
 
 async def _plan_node(state: AgentState) -> dict[str, Any]:
-    """根据路由结果写入可展示的执行计划；非 RAG 问题跳过检索步骤。"""
-    if not state.get("needs_retrieval", True):
-        plan = [{
-            "step": 1,
-            "action": "supervisor",
-            "purpose": "基于会话和记忆上下文直接回答，无需检索小说原文",
-        }]
+    """写入可展示的执行计划；required 兜底路径保留预检索步骤。"""
+    strategy = Strategy(state["strategy"])
+    if strategy is Strategy.MULTI_EXPERT or state.get("retrieval_policy") == "required":
+        plan = _plan(strategy)
+        if strategy is not Strategy.MULTI_EXPERT:
+            # required 兜底：预检索只是初始证据来源，之后仍进入同一决策循环。
+            plan = [
+                {"step": 1, "action": "retrieve_novel", "purpose": "保守兜底预检索（查询准备不可靠）"},
+                {"step": 2, "action": "react_loop", "purpose": "模型自主决定补充检索、计算或直接回答"},
+                {"step": 3, "action": "supervisor", "purpose": "生成带引用的最终答案"},
+            ]
     else:
-        plan = _plan(Strategy(state["strategy"]))
+        plan = _plan(strategy)
     await _emit(state, "plan", {
         "steps": plan,
         "max_steps": state["max_steps"],
-        "retrieval_skipped": not state.get("needs_retrieval", True),
+        "retrieval_policy": state.get("retrieval_policy", "optional"),
     })
     return {"plan": plan}
 
 
 def _after_plan(state: AgentState) -> str:
-    """路由节点决定是否进入共享小说 RAG。"""
-    return "retrieve" if state.get("needs_retrieval", True) else "supervisor"
+    """multi_expert 与 required 兜底先跑共享预检索；其余直接进入决策循环。"""
+    if Strategy(state["strategy"]) is Strategy.MULTI_EXPERT:
+        return "retrieve"
+    return "retrieve" if state.get("retrieval_policy") == "required" else "execute"
 
 
 async def _retrieve_node(state: AgentState) -> dict[str, Any]:
@@ -201,17 +280,16 @@ async def _retrieve_node(state: AgentState) -> dict[str, Any]:
         "observations": [observation],
         "current_step": 1,
         "fallback_reason": "" if evidence else (result.error_code or "empty_retrieval"),
+        # 预检索也算"实际执行过 RAG"：multi_expert 与 required 兜底都经此路径。
+        "rag_called": True,
+        "rag_call_count": 1,
     }
 
 
 def _after_retrieve(state: AgentState) -> str:
-    """根据当前策略和检索结果选择专家、执行或直接汇总分支。"""
-    strategy = Strategy(state["strategy"])
-    # 多专家分支先完成一次共享检索，再拆分任务，避免四个专家重复调用 RAG。
-    if strategy is Strategy.MULTI_EXPERT:
+    """预检索完成后：multi_expert 去分派专家，其余进入同一决策循环。"""
+    if Strategy(state["strategy"]) is Strategy.MULTI_EXPERT:
         return "dispatch"
-    if strategy is Strategy.DIRECT:
-        return "supervisor"
     return "execute"
 
 
@@ -269,6 +347,20 @@ def _specialist_prompt(contract: SpecialistContract, state: AgentState, correcti
     )
 
 
+async def _generate_fallback_report(contract: SpecialistContract, state: AgentState) -> str:
+    """专家 reasoning-only / 空输出时的最终报告补生成。
+
+    走主模型（get_llm 不带 purpose → 全局关闭 thinking）一次非流式调用：
+    不带纠偏诊断、不暴露内部推理，直接按原任务与共享证据输出报告。
+    """
+    response = await get_llm(temperature=0).ainvoke([
+        SystemMessage(content="你只完成被分配的专家子任务，共享原文是唯一事实边界。直接输出最终报告，不要输出思考过程、任务说明或解释。"),
+        HumanMessage(content=_specialist_prompt(contract, state, None)),
+    ])
+    content = response.content if isinstance(response.content, str) else ""
+    return content.strip()
+
+
 async def _run_specialist(
     contract: SpecialistContract,
     state: AgentState,
@@ -277,15 +369,37 @@ async def _run_specialist(
     retry: int = 0,
     correction: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """执行单个专家并收集流式报告；失败只影响当前专家。"""
+    """执行单个专家并收集流式报告；失败只影响当前专家。
+
+    reasoning 走 thinking 事件（stream=multi_agent，按 agent 分组），最终报告
+    仍走 tool_token——前端报告渲染不受影响；纠偏使用新 stream id 防拼接旧流。
+    正文为空（reasoning-only 或静默空回包）不是契约问题：不进入契约纠偏，
+    由主模型补生成一次，仍为空才标记 empty_output 并交给 Supervisor 降级。
+    """
     started = time.perf_counter()
     first_token_ms: float | None = None
     parts: list[str] = []
+    thinking = _ThinkingSpan(
+        state,
+        stream="multi_agent",
+        span_id=f"expert-{contract.name}" + (f"-retry{retry}" if retry else ""),
+        phase="reasoning",
+        agent=contract.name,
+        label=contract.label,
+        retry=retry or None,
+    )
+    recovered = False
     try:
-        async for token in _stream_llm([
+        async for delta in astream_model_turn([
             SystemMessage(content="你只完成被分配的专家子任务，共享原文是唯一事实边界。"),
             HumanMessage(content=_specialist_prompt(contract, state, correction)),
-        ], settings.agent_expert_max_tokens):
+        ], LLMPurpose.EXPERT, max_tokens=settings.agent_expert_max_tokens):
+            if delta.kind == "reasoning":
+                await thinking.token(delta.text)
+                continue
+            if delta.kind != "content":
+                continue
+            token = delta.text
             if first_token_ms is None:
                 first_token_ms = round((time.perf_counter() - started) * 1000, 1)
             parts.append(token)
@@ -297,30 +411,94 @@ async def _run_specialist(
                 "retry": retry,
                 "delta": token,
             })
+        await thinking.end("corrected" if retry else "completed")
+        metrics.incr("agent_expert_reasoning_chars", thinking.chars)
+
+        report_text = "".join(parts).strip()
+        if not report_text:
+            await _emit(state, "tool_end", {
+                "id": agent_id,
+                "tool": "specialist",
+                "agent": contract.name,
+                "label": contract.label,
+                "status": "fallback_generation",
+                "reason": "expert_final_content_empty",
+                "summary": "专家最终报告未生成，正在重新生成",
+                "retry": retry,
+            })
+            metrics.incr("agent_expert_fallback_generation_count")
+            report_text = await _generate_fallback_report(contract, state)
+            recovered = bool(report_text)
+            if report_text:
+                # 补生成是非流式调用：报告整段回灌 tool_token，让前端「调用过程」
+                # 里能看到正文（与主流式报告同一条渲染路径）。
+                await _emit(state, "tool_token", {
+                    "id": agent_id,
+                    "tool": "specialist",
+                    "agent": contract.name,
+                    "label": contract.label,
+                    "retry": retry,
+                    "delta": report_text,
+                })
+        metrics.incr("agent_expert_report_chars", len(report_text))
+
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        if not report_text:
+            # 补生成仍为空：标记 empty_output 退出；校验集合只收 ok 报告，天然不进纠偏。
+            metrics.incr("agent_expert_empty_output_count")
+            await _emit(state, "tool_end", {
+                "id": agent_id,
+                "tool": "specialist",
+                "agent": contract.name,
+                "label": contract.label,
+                "status": "empty_output",
+                "error_code": "expert_final_content_empty",
+                "summary": "专家最终报告未生成",
+                "latency_ms": latency_ms,
+                "retry": retry,
+            })
+            return {
+                "agent": contract.name,
+                "label": contract.label,
+                "status": "empty_output",
+                "report": "",
+                "error_code": "expert_final_content_empty",
+                "latency_ms": latency_ms,
+                "corrected": bool(retry),
+            }
+
+        summary = (
+            f"{contract.label}纠偏完成" if retry
+            else f"{contract.label}报告补生成完成" if recovered
+            else f"{contract.label}分析完成"
+        )
         await _emit(state, "tool_end", {
             "id": agent_id,
             "tool": "specialist",
             "agent": contract.name,
             "label": contract.label,
             "status": "corrected" if retry else "ok",
-            "summary": f"{contract.label}{'纠偏' if retry else '分析'}完成",
+            "summary": summary,
             "latency_ms": latency_ms,
             "first_token_ms": first_token_ms,
             "retry": retry,
+            "recovered": recovered,
         })
         return {
             "agent": contract.name,
             "label": contract.label,
             "status": "ok",
-            "report": "".join(parts),
+            "report": report_text,
             "latency_ms": latency_ms,
             "first_token_ms": first_token_ms,
             "corrected": bool(retry),
+            "recovered": recovered,
         }
     except asyncio.CancelledError:
+        await thinking.end("cancelled")
         raise
     except Exception as exc:  # noqa: BLE001
+        await thinking.end("error")
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         await _emit(state, "tool_end", {
             "id": agent_id,
@@ -465,6 +643,10 @@ async def _refine_experts_node(state: AgentState) -> dict[str, Any]:
     corrections: dict[str, dict[str, Any]] = {}
     for name in names:
         validation = state["report_validation"][name]
+        if validation.get("similarity_flags"):
+            metrics.incr("agent_expert_similarity_correction_count")
+        else:
+            metrics.incr("agent_expert_contract_correction_count")
         corrections[name] = {
             **validation,
             "previous_report": by_agent[name].get("report", ""),
@@ -501,45 +683,234 @@ async def _refine_experts_node(state: AgentState) -> dict[str, Any]:
     }
 
 
+# ReAct 证据累积上限（块数）：循环成立后证据跨轮增长，系统没有全局 token
+# 计数器，必须在源头封顶，否则证据滚雪球会放大 summary prompt 成本。
+_REACT_MAX_EVIDENCE = 24
+
+
+def _react_system_prompt(state: AgentState) -> str:
+    """Agent 决策循环的系统提示：是否调用 RAG 的判定条件集中在此。"""
+    parts = [
+        "你是小说阅读助手 Agent，自主决定下一步行动。",
+        "调用工具的条件：",
+        "- 问题涉及小说人物、关系、情节、时间线、章节、伏笔、动机或原文核验，且当前上下文没有足够证据；",
+        "- 问题包含跨轮小说指代，会话记忆不足以可靠回答；",
+        "- 对关键小说事实不确定，而检索能够消除该不确定性；",
+        "- 已有命中不足以理解前因后果时调用 get_chapter_context；",
+        "- 需要时间跨度、数量等确定性计算时调用 calculator。",
+        "不调用工具、直接回答的条件：",
+        "- 问候、闲聊、感谢、输出偏好或记忆操作；",
+        "- 仅需处理用户本轮提供的完整文本（改写、总结、分析）；",
+        "- 当前上下文与已有工具结果已足以回答；",
+        "- 与小说内容无关的一般问题。",
+        "约束：",
+        "- 「不展示原文」只影响最终输出策略，不禁止你检索；",
+        "- 检索无结果或失败时，不得以常识、会话记忆或猜测冒充小说事实；",
+        "- 工具结果只是证据，最终回答由汇总节点生成，不要在决策阶段写答案；",
+        "- 证据足以回答时立即结束（不调用任何工具）；不要重复调用已覆盖相同内容的检索。",
+    ]
+    if Strategy(state["strategy"]) is Strategy.DIRECT:
+        parts.append("- 本轮为短路径模式：优先直接回答，仅在明显缺少小说事实时做一次检索。")
+    return "\n".join(parts)
+
+
+def _react_initial_human(state: AgentState) -> str:
+    """决策循环的首条用户消息：问题 + 查询准备建议 + 记忆上下文。"""
+    original = state.get("original_query", "")
+    lines = [f"用户问题：{original or state.get('standalone_query', '')}"]
+    prep = state.get("query_preparation") or {}
+    if prep.get("needs_retrieval"):
+        reason = prep.get("retrieval_reason") or "novel_evidence"
+        lines.append(f"查询准备建议：该问题可能需要小说原文检索（{reason}），请优先考虑 retrieve_novel。")
+    memories = (state.get("memory_context") or {}).get("memories") or []
+    memory_lines = [f"- {m.get('content', '')}" for m in memories[:5] if m.get("content")]
+    if memory_lines:
+        lines.append("长期记忆（仅供理解上下文，不是小说原文证据）：\n" + "\n".join(memory_lines))
+    if state.get("retrieval_policy") == "required":
+        lines.append("系统保守兜底判定：该问题需要小说证据，请先调用 retrieve_novel。")
+    return "\n\n".join(lines)
+
+
+def _parse_plan_text(text: str) -> list[dict[str, Any]]:
+    """把模型输出的计划文本解析为可展示的计划步骤。"""
+    steps: list[dict[str, Any]] = []
+    for line in (text or "").splitlines():
+        line = line.strip().lstrip("-*· ")
+        if not line:
+            continue
+        steps.append({"step": len(steps) + 1, "action": "model_step", "purpose": line[:120]})
+        if len(steps) >= 5:
+            break
+    return steps
+
+
 async def _execute_node(state: AgentState) -> dict[str, Any]:
-    """执行 react 或 plan_execute 策略中的下一步工具调用。"""
+    """Agent 决策循环的单步：observe（消息历史）→ decide（模型选工具/直答/计划）→ act。
+
+    react/direct/plan_execute 共用本节点。工具结果经 ToolMessage 回灌
+    （react_messages 跨轮保留），模型每轮都能看到此前全部工具结果。
+    """
     evidence = list(state.get("evidence", []))
     observations = list(state.get("observations", []))
-    current_step = state.get("current_step", 1)
+    # 步号从 0 起计：仅当共享预检索（required 兜底/multi_expert）已占用第 1 步时，
+    # 首个决策才是第 2 步；检索被跳过的轮次不再凭空空缺"第 1 步"。
+    current_step = state.get("current_step", 0)
     fallback = state.get("fallback_reason", "")
-    for item in state.get("plan", []):
-        action = item["action"]
-        if action not in {"get_chapter_context", "calculator"}:
-            continue
-        if current_step >= state["max_steps"]:
-            fallback = "step_budget_exceeded"
+    max_steps = state["max_steps"]
+    strategy = Strategy(state["strategy"])
+    react_messages = list(state.get("react_messages", []))
+    rag_called = bool(state.get("rag_called"))
+    rag_count = int(state.get("rag_call_count", 0))
+
+    if current_step >= max_steps:
+        return {
+            "current_step": current_step,
+            "fallback_reason": fallback or "step_budget_exceeded",
+            "react_done": True,
+            "stop_reason": fallback or "step_budget_exceeded",
+            "react_messages": react_messages,
+        }
+
+    if not react_messages:
+        react_messages = [HumanMessage(content=_react_initial_human(state))]
+
+    system = _react_system_prompt(state)
+    plan_phase = strategy is Strategy.PLAN_EXECUTE and not state.get("plan_committed")
+    if plan_phase:
+        system = (
+            "你是小说问答的规划助手。请给出不超过 5 行的中文执行计划，每行一个动作，"
+            "说明为回答用户问题需要哪些证据或计算。不要调用工具，只输出计划本身。"
+        )
+    messages = [SystemMessage(content=system)] + react_messages
+    thinking = _ThinkingSpan(
+        state,
+        stream="main_agent",
+        span_id=f"agent-step-{current_step + 1}",
+        phase="plan" if plan_phase else "decide",
+        step=current_step + 1,
+    )
+    builder = ModelTurnBuilder()
+    purpose = LLMPurpose.AGENT_PLAN if plan_phase else LLMPurpose.AGENT_DECISION
+    try:
+        async for delta in astream_model_turn(
+            messages, purpose,
+            tools=list(REACT_TOOL_SPECS),
+            max_tokens=400 if plan_phase else 300,
+        ):
+            if delta.kind == "reasoning":
+                await thinking.token(delta.text)
+                builder.add_delta(delta)
+            else:
+                builder.add_delta(delta)
+        await thinking.end("completed")
+    except asyncio.CancelledError:
+        await thinking.end("cancelled")
+        raise
+    except Exception:
+        await thinking.end("error")
+        raise
+    turn = builder.build()
+    calls = turn.tool_calls
+    content_text = turn.content
+
+    # plan_execute 首轮强制先产出计划；计划本身不触发任何工具。
+    if strategy is Strategy.PLAN_EXECUTE and not state.get("plan_committed"):
+        steps = _parse_plan_text(content_text)
+        await _emit(state, "plan", {"steps": steps, "max_steps": max_steps, "plan_adjusted": False})
+        await _emit(state, "agent_decision", {"action": "plan", "reason": "复杂任务先生成执行计划", "step": current_step})
+        return {
+            "plan": steps or state.get("plan", []),
+            "plan_committed": True,
+            "current_step": current_step,
+            "react_done": False,
+            "react_messages": react_messages + [AIMessage(content=content_text, tool_calls=[])],
+        }
+
+    if not calls:
+        # 模型不再调用工具即判定上下文足够，循环终止，进入汇总。
+        await _emit(state, "agent_decision", {
+            "action": "answer",
+            "reason": (content_text.strip()[:120] or "当前上下文足以回答"),
+            "step": current_step,
+        })
+        return {
+            "current_step": current_step,
+            "react_done": True,
+            "stop_reason": fallback or "model_answer",
+            "react_messages": react_messages,
+            "rag_called": rag_called,
+            "rag_call_count": rag_count,
+        }
+
+    # react 自发计划：第一轮模型在调用工具的同时给出多行计划文本，则展示之。
+    if strategy is Strategy.REACT and not state.get("plan_committed") and content_text.count("\n") >= 1:
+        candidate = _parse_plan_text(content_text)
+        if len(candidate) >= 2:
+            await _emit(state, "plan", {"steps": candidate, "max_steps": max_steps, "plan_adjusted": False})
+            await _emit(state, "agent_decision", {"action": "plan", "reason": "复杂任务先生成执行计划", "step": current_step})
+
+    await _emit(state, "agent_decision", {
+        "action": "tool_call",
+        # calls 是 llm.ToolCall 数据类：必须属性访问，字典 .get 会在"无正文纯工具调用"时崩溃。
+        "reason": (content_text.strip()[:120] or "、".join(call.name for call in calls[:2])),
+        "step": current_step + 1,
+    })
+
+    # 单轮最多执行 min(2, 剩余预算) 个工具调用，防止单轮爆发。
+    budget_this_turn = min(2, max_steps - current_step)
+    executed_calls: list[dict[str, Any]] = []
+    executed_results: list[ToolResult] = []
+    for call in calls:
+        if len(executed_calls) >= budget_this_turn:
             break
+        name = call.name
+        call_id = call.id or f"agent-step-{current_step + len(executed_calls) + 1}"
+        # 模型只提供业务参数（query/expression）；检索范围（file_id）由状态注入，
+        # 不进模型 schema，避免伪造或跨书检索。
+        kwargs = {k: v for k, v in call.args.items() if k in {"query", "expression"}}
+        if name in {"retrieve_novel", "get_chapter_context"} and not kwargs.get("query"):
+            kwargs["query"] = state["standalone_query"]
         current_step += 1
-        call_id = f"agent-step-{current_step}"
-        await _emit(state, "step_start", {"step": current_step, "action": action, "purpose": item["purpose"]})
-        await _emit(state, "tool_start", {"id": call_id, "tool": action, "label": item["purpose"], "step": current_step})
+        await _emit(state, "step_start", {"step": current_step, "action": name, "purpose": REACT_TOOL_LABELS.get(name, name)})
+        await _emit(state, "tool_start", {"id": call_id, "tool": name, "label": REACT_TOOL_LABELS.get(name, name), "step": current_step})
         result = await registry.execute(
-            action,
+            name,
             allowed_tools=state["allowed_tools"],
-            query=state["standalone_query"],
             file_id=state.get("file_id"),
+            **kwargs,
         )
         observations.append(result.as_dict())
+        if name in {"retrieve_novel", "get_chapter_context"}:
+            rag_called = True
+            rag_count += 1
         if result.status == "ok" and isinstance(result.output, dict):
             evidence.extend(result.output.get("evidence", []))
         await _emit(state, "observation", {"step": current_step, **result.as_dict()})
         await _emit(state, "tool_end", {
             "id": call_id,
-            "tool": action,
-            "label": item["purpose"],
+            "tool": name,
+            "label": REACT_TOOL_LABELS.get(name, name),
             "step": current_step,
             "status": result.status,
             "summary": result.error_code or f"完成，耗时 {result.latency_ms}ms",
         })
+        executed_calls.append({"id": call_id, "name": name, "args": dict(call.args)})
+        executed_results.append(result)
         if result.status != "ok":
             fallback = result.error_code or "tool_failed"
             break
+
+    # 工具结果以 ToolMessage 回灌；只保留实际执行过的调用，保证消息序列合法。
+    threaded_response = AIMessage(content=content_text, tool_calls=executed_calls)
+    react_messages = react_messages + [threaded_response] + [
+        ToolMessage(content=_react_payload(result), tool_call_id=call_spec["id"])
+        for call_spec, result in zip(executed_calls, executed_results)
+    ]
+
     normalized, sources = _normalize_evidence(evidence)
+    # _normalize_evidence 中 evidence 与 sources 一一对应，同步截断保持一致。
+    normalized = normalized[:_REACT_MAX_EVIDENCE]
+    sources = sources[:len(normalized)]
     if sources != state.get("sources", []):
         await _emit(state, "sources", sources)
     return {
@@ -548,19 +919,35 @@ async def _execute_node(state: AgentState) -> dict[str, Any]:
         "observations": observations,
         "current_step": current_step,
         "fallback_reason": fallback,
+        "react_done": False,
+        "react_messages": react_messages,
+        "rag_called": rag_called,
+        "rag_call_count": rag_count,
+        "stop_reason": "",
     }
 
 
 async def _reflect_node(state: AgentState) -> dict[str, Any]:
-    """检查多步执行结果是否足以进入最终汇总。"""
-    if state.get("fallback_reason"):
-        decision, reason = "fallback", state["fallback_reason"]
-    elif state.get("evidence"):
-        decision, reason = "final", "已有可引用证据"
+    """评估证据与预算，决定继续执行还是进入汇总；本节点驱动条件回边。"""
+    if state.get("react_done"):
+        decision, reason = "final", "模型判定证据足以回答"
+    elif state.get("fallback_reason"):
+        decision, reason = "final", state["fallback_reason"]
+    elif state.get("current_step", 0) >= state.get("max_steps", 0):
+        decision, reason = "final", "step_budget_exceeded"
     else:
-        decision, reason = "fallback", "没有召回有效证据"
+        decision, reason = "continue", "证据或计划尚未完成，继续执行"
     await _emit(state, "reflection", {"decision": decision, "reason": reason, "step": state.get("current_step", 0)})
-    return {"fallback_reason": state.get("fallback_reason") or ("empty_retrieval" if not state.get("evidence") else "")}
+    return {}
+
+
+def _after_reflect(state: AgentState) -> str:
+    """ReAct 条件回边：未终止且预算未耗尽时回到 execute 继续执行。"""
+    if state.get("react_done") or state.get("fallback_reason"):
+        return "supervisor"
+    if state.get("current_step", 0) >= state.get("max_steps", 0):
+        return "supervisor"
+    return "execute"
 
 
 async def _memory_agent_node(state: AgentState) -> dict[str, Any]:
@@ -613,9 +1000,9 @@ async def _memory_agent_node(state: AgentState) -> dict[str, Any]:
             break
         messages.append(response)
         for call in calls[:3]:
-            name = call.get("name") or ""
-            args = call.get("args") or {}
-            call_id = call.get("id") or f"mem-{len(ops) + 1}"
+            name = str(tool_call_field(call, "name") or "")
+            args = tool_call_field(call, "args") or {}
+            call_id = tool_call_field(call, "id") or f"mem-{len(ops) + 1}"
             await _emit(state, "tool_start", {"id": call_id, "tool": name, "label": "记忆操作"})
             result = await registry.execute(name, allowed_tools=MEMORY_AGENT_TOOLS, **args)
             # 前端只展示操作语义，不展示记忆内容与参数，避免把用户信息铺在界面上。
@@ -660,16 +1047,27 @@ async def _supervisor_node(state: AgentState) -> dict[str, Any]:
         and validations.get(report.get("agent"), {}).get("contract_ok", True)
     ]
     fallback = state.get("fallback_reason", "")
-    if state.get("answer_mode", "novel_evidence") == "novel_evidence" and not evidence:
+    rag_called = bool(state.get("rag_called"))
+    answer_mode = state.get("answer_mode", "novel_evidence")
+    if state.get("answer_mode", "novel_evidence") == "novel_evidence" and not evidence and rag_called:
         fallback = fallback or "empty_retrieval"
+    # Agent-first 语义：实际执行过 RAG 才走原文证据汇总；模型跳过检索时按
+    # 路由判定的会话/记忆模式回答（summary 侧对"建议检索却未检索"加强提示）。
+    if rag_called:
+        effective_answer_mode = "novel_evidence"
+    else:
+        effective_answer_mode = answer_mode if answer_mode in {"memory_context", "conversation"} else "conversation"
     synthesis_context = {
         "question": state.get("standalone_query", ""),
         "evidence": evidence,
         "sources": state.get("sources", []),
         "reports": successful,
         "report_validation": validations,
+        "observations": state.get("observations", []),
         "summary": (state.get("memory_context") or {}).get("summary", ""),
         "memories": (state.get("memory_context") or {}).get("memories", []),
+        "effective_answer_mode": effective_answer_mode,
+        "route_suggested_retrieval": bool(state.get("needs_retrieval")) and not rag_called,
     }
     return {
         "synthesis_context": synthesis_context,
@@ -704,7 +1102,7 @@ async def _summary_node(state: AgentState) -> dict[str, Any]:
     context = state.get("synthesis_context") or {}
     evidence = context.get("evidence") or []
     reports = context.get("reports") or []
-    answer_mode = state.get("answer_mode", "novel_evidence")
+    answer_mode = context.get("effective_answer_mode") or state.get("answer_mode", "novel_evidence")
     fallback = state.get("fallback_reason", "")
     if answer_mode == "novel_evidence" and not evidence:
         answer = _EMPTY_MESSAGE
@@ -732,19 +1130,36 @@ async def _summary_node(state: AgentState) -> dict[str, Any]:
                 f"【{report.get('label', report.get('agent', '专家'))}】\n{_strip_quote_markers(report.get('report', ''))}"
                 for report in reports
             ) or "（无专家报告）"
+            tool_text = "\n".join(
+                f"- {obs.get('tool')}: {json.dumps(obs.get('output'), ensure_ascii=False)[:200]}"
+                for obs in context.get("observations", [])
+                if obs.get("tool") not in {
+                    "retrieve_novel", "get_chapter_context", "specialist",
+                    "search_memories", "add_memory", "update_memory", "delete_memory",
+                }
+                and obs.get("status") == "ok" and obs.get("output") is not None
+            ) or "（无）"
             prompt = (
                 f"{policy_text}\n请基于经过内部校验的小说证据回答用户问题。事实优先于推断；"
                 "若证据不足请明确说明。不要展示内部过程。关键事实可使用 [S#]，但严格遵守展示策略。\n\n"
                 f"问题：{context.get('question', '')}\n\n共享证据：\n{_evidence_text(evidence)}\n\n"
-                f"专家内部结论：\n{reports_text}\n\n会话摘要：\n{summary_text}\n\n长期记忆：\n{memory_text}"
+                f"专家内部结论：\n{reports_text}\n\n工具计算结果：\n{tool_text}\n\n"
+                f"会话摘要：\n{summary_text}\n\n长期记忆：\n{memory_text}"
             )
             system = "你是严谨的小说问答总结助手。"
         else:
             prompt = (
-                f"{policy_text}\n当前问题不需要检索小说原文。请基于会话摘要和长期记忆自然回答，"
+                f"{policy_text}\n当前回答不依赖小说原文检索。请基于会话摘要、长期记忆和用户本轮提供的内容自然回答，"
                 "不要编造小说事实，不要生成 [S#]。如果用户是在设置偏好，简洁确认即可。\n\n"
                 f"问题：{context.get('question', '')}\n\n会话摘要：\n{summary_text}\n\n长期记忆：\n{memory_text}"
             )
+            if context.get("route_suggested_retrieval"):
+                # 路由建议检索而 Agent 未检索：强制声明证据边界，禁止参数记忆冒充原文。
+                prompt += (
+                    "\n\n注意：查询准备判定该问题可能需要小说原文证据，但本轮未执行检索。"
+                    "回答中涉及小说事实的部分必须明确说明“未核对原文、无法确认”，"
+                    "严禁凭记忆给出具体情节、数字或引文；如需准确答案请建议用户追问以触发检索。"
+                )
             system = "你是能够保持会话连续性的小说阅读助手。"
         parts: list[str] = []
         # 流式下发总结 token：专家报告已流式展示，最终答案同样逐段推送，
@@ -777,8 +1192,15 @@ async def _summary_node(state: AgentState) -> dict[str, Any]:
         "report_validation": state.get("report_validation", {}),
         "expert_count": len(state.get("assignments", [])),
         "fallback_reason": fallback,
-        "needs_retrieval": state.get("needs_retrieval", True),
-        "retrieval_skipped": not state.get("needs_retrieval", True),
+        # Agent-first 语义：needs_retrieval 表示"实际是否执行过 RAG"，
+        # 路由建议与实际执行分开上报（retrieval_policy / llm_needs_retrieval）。
+        "needs_retrieval": bool(state.get("rag_called")),
+        "rag_called": bool(state.get("rag_called")),
+        "rag_call_count": int(state.get("rag_call_count", 0)),
+        "retrieval_policy": state.get("retrieval_policy", "optional"),
+        "stop_reason": state.get("stop_reason", ""),
+        "plan_adjusted": bool(state.get("plan_adjusted")),
+        "retrieval_skipped": not bool(state.get("rag_called")),
         "retrieval_reason": state.get("retrieval_reason", ""),
         "answer_mode": answer_mode,
         "output_policy": policy,
@@ -822,7 +1244,7 @@ def _build_graph():
     graph.add_conditional_edges(
         "plan",
         _after_plan,
-        {"retrieve": "retrieve", "supervisor": "supervisor"},
+        {"retrieve": "retrieve", "execute": "execute"},
     )
     graph.add_conditional_edges(
         "retrieve",
@@ -837,8 +1259,15 @@ def _build_graph():
         {"refine": "refine_experts", "supervisor": "supervisor"},
     )
     graph.add_edge("refine_experts", "supervisor")
+    # ReAct 执行环：execute → reflect → (execute | supervisor)。
+    # 这是全图唯一的回边，构成真实的"执行—评估—再执行"循环；
+    # 终止由 max_steps 预算与 react_done 双重保证，不会无限循环。
     graph.add_edge("execute", "reflect")
-    graph.add_edge("reflect", "supervisor")
+    graph.add_conditional_edges(
+        "reflect",
+        _after_reflect,
+        {"execute": "execute", "supervisor": "supervisor"},
+    )
     graph.add_conditional_edges(
         "supervisor",
         _after_supervisor,
@@ -882,6 +1311,11 @@ async def stream_agent_question(
         "file_id": file_id,
         "session_id": session_id,
         "memory_agent_active": memory_agent_active,
+        "react_messages": [],
+        "rag_called": False,
+        "rag_call_count": 0,
+        "stop_reason": "",
+        "plan_adjusted": False,
         "event_queue": queue,
     }
 

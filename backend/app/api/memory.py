@@ -34,7 +34,8 @@ async def list_visible_memories(session_id: str | None = None, file_id: str | No
             raise HTTPException(status_code=409, detail="当前会话绑定了另一部小说")
         file_id = file_id or session.file_id
         rows = await memory_service.retrieve_memories(
-            query="", session_id=session_id, file_id=file_id, limit=50
+            query="", session_id=session_id, file_id=file_id, limit=50,
+            refresh_ttl=False,  # 只读查看不延长 TTL
         )
     else:
         rows = await memory_service.list_memories(file_id=file_id, limit=50)
@@ -59,5 +60,6 @@ async def get_memory_context(session_id: str, file_id: str | None = None):
         session_id=session_id,
         file_id=file_id or session.file_id,
         query="",
+        refresh_ttl=False,  # 只读查看不延长 TTL
     )
     return {"code": 0, "data": context}

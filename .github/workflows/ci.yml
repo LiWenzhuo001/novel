@@ -51,6 +51,10 @@ jobs:
           # 这正好让本 job 顺带校验 config.py 中的默认值（见 test_config_defaults.py）。
           HF_HUB_OFFLINE: "1"
           POSTGRES_HOST: 127.0.0.1
+          # lifespan 现在启动期 fail-fast 校验密钥（main.py），CI 用哑 key 通过结构校验；
+          # 真实连通性不在此验证。
+          LLM_API_KEY: ci-dummy-key
+          EMBEDDING_API_KEY: ci-dummy-key
         run: |
           python -m pytest tests/ \
             --ignore=tests/test_api.py \
@@ -59,11 +63,10 @@ jobs:
             -q
 
   test-db:
-    # 需要 PostgreSQL + pgvector。首期允许失败：先把不依赖 DB 的那 114 项守住，
-    # 待此 job 稳定后移除 continue-on-error。
+    # 需要 PostgreSQL + pgvector。迁移收敛后本 job 为合并门禁：
+    # alembic 建库 → 幂等复跑 → 可逆性（downgrade -1 + upgrade）→ schema 对账 → 测试。
     name: test (with database)
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: backend
@@ -102,6 +105,35 @@ jobs:
           POSTGRES_PASSWORD: job_agent123
           HF_HUB_OFFLINE: "1"
         run: alembic upgrade head
+      - name: 迁移幂等性检查（二次执行无变化）
+        env:
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: job_agent
+          POSTGRES_USER: job_agent
+          POSTGRES_PASSWORD: job_agent123
+          HF_HUB_OFFLINE: "1"
+        run: alembic upgrade head
+      - name: 迁移可逆性检查（downgrade -1 + 重新升级）
+        env:
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: job_agent
+          POSTGRES_USER: job_agent
+          POSTGRES_PASSWORD: job_agent123
+          HF_HUB_OFFLINE: "1"
+        run: |
+          alembic downgrade -1
+          alembic upgrade head
+      - name: schema 对账（ORM vs 迁移后数据库）
+        env:
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: job_agent
+          POSTGRES_USER: job_agent
+          POSTGRES_PASSWORD: job_agent123
+          HF_HUB_OFFLINE: "1"
+        run: python scripts/check_schema.py
       - name: pytest (API + auth)
         env:
           POSTGRES_HOST: 127.0.0.1
@@ -113,4 +145,6 @@ jobs:
           # CI 不评估重排质量（由离线评测管）：默认开启的重排需要 2.3GB 模型，
           # 离线环境无法加载，关闭以保持 API/auth 测试聚焦。
           ENABLE_RERANKER: "false"
+          LLM_API_KEY: ci-dummy-key
+          EMBEDDING_API_KEY: ci-dummy-key
         run: python -m pytest tests/test_api.py tests/test_auth.py tests/test_chat_api.py -q

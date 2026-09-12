@@ -7,6 +7,10 @@ from typing import Any, Literal, TypedDict
 
 AnswerMode = Literal["novel_evidence", "memory_context", "conversation"]
 CitationStyle = Literal["chapter_only", "hidden", "normal"]
+# 三档检索政策：required=保守兜底（prep 失效/低置信，先预检索一次）；
+# optional=模型自主决定；forbidden=纯会话/偏好，直接回答。policy 只是提示与
+# 汇总提示强度的依据，不是硬闸——工具选择始终由执行环里的模型完成。
+RetrievalPolicy = Literal["required", "optional", "forbidden"]
 
 DEFAULT_OUTPUT_POLICY: dict[str, Any] = {
     "summary_only": True,
@@ -54,6 +58,7 @@ class AgentState(TypedDict, total=False):
     memory_context: dict[str, Any]
     needs_retrieval: bool
     retrieval_reason: str
+    retrieval_policy: str
     answer_mode: str
     output_policy: dict[str, Any]
     preference_update: dict[str, Any] | None
@@ -72,6 +77,15 @@ class AgentState(TypedDict, total=False):
     max_experts: int
     allowed_tools: list[str]
     plan: list[dict[str, Any]]
+    # ReAct 循环状态：模型判定证据充分（react_done）或 plan_execute 已产出计划。
+    react_done: bool
+    plan_committed: bool
+    # Agent 决策循环跨轮消息（模型 response 与 ToolMessage 回灌）与执行统计。
+    react_messages: list
+    rag_called: bool
+    rag_call_count: int
+    stop_reason: str
+    plan_adjusted: bool
     observations: list[dict[str, Any]]
     evidence: list[dict[str, Any]]
     sources: list[dict[str, Any]]
@@ -98,6 +112,7 @@ class RouteDecision:
     max_steps: int
     requires_citation: bool = True
     needs_retrieval: bool = True
+    retrieval_policy: str = "optional"
     retrieval_reason: str = "novel_evidence"
     answer_mode: AnswerMode = "novel_evidence"
     output_policy: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_OUTPUT_POLICY))
@@ -116,6 +131,7 @@ class RouteDecision:
             "max_steps": self.max_steps,
             "requires_citation": self.requires_citation,
             "needs_retrieval": self.needs_retrieval,
+            "retrieval_policy": self.retrieval_policy,
             "retrieval_reason": self.retrieval_reason,
             "answer_mode": self.answer_mode,
             "output_policy": dict(self.output_policy),

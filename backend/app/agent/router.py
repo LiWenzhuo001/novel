@@ -98,27 +98,38 @@ def _hint_is_valid(hint: dict[str, Any]) -> bool:
 
 
 def _routing_choice(query: str, routing_hint: dict[str, Any] | None):
+    """三档检索政策判定。
+
+    返回 (needs_retrieval, policy, reason, answer_mode, policy, output_policy,
+    preference_update, routing)。policy 语义：
+    - required：保守兜底（prep 失效/低置信/强信号覆盖/规则兜底），执行环前先
+      预检索一次；这只是 fail-closed 的初始证据来源，后续工具选择仍归模型。
+    - optional：模型自主决定；LLM 判 needs_retrieval=true 只是执行环里的强提示。
+    - forbidden：纯会话/偏好判定，默认走对话式回答分支。
+    needs_retrieval 布尔表示"路由判定是否需要检索"（建议性质）。
+    """
     hint = routing_hint if isinstance(routing_hint, dict) else {}
-    policy = merge_output_policy(hint.get("output_policy"))
+    policy_out = merge_output_policy(hint.get("output_policy"))
     preference_update = hint.get("preference_update")
 
     if not settings.enable_llm_query_routing or not routing_hint:
         needs, reason, mode = _rule_needs_retrieval(query)
-        return needs, reason, mode, policy, preference_update, _routing_metadata(
+        policy = "required" if needs else "forbidden"
+        return needs, policy, reason, mode, policy_out, preference_update, _routing_metadata(
             llm_needs_retrieval=None,
             override=False,
             reason="llm_routing_disabled_or_unavailable",
             confidence=None,
         )
     if not _hint_is_valid(routing_hint):
-        return True, "query_preparation_failed", "novel_evidence", policy, preference_update, _routing_metadata(
+        return True, "required", "query_preparation_failed", "novel_evidence", policy_out, preference_update, _routing_metadata(
             llm_needs_retrieval=None,
             override=True,
             reason="invalid_query_preparation",
             confidence=None,
         )
     if routing_hint.get("reason") != "rewritten":
-        return True, "query_preparation_failed", "novel_evidence", policy, preference_update, _routing_metadata(
+        return True, "required", "query_preparation_failed", "novel_evidence", policy_out, preference_update, _routing_metadata(
             llm_needs_retrieval=None,
             override=True,
             reason=str(routing_hint.get("reason") or "query_preparation_failed"),
@@ -128,30 +139,31 @@ def _routing_choice(query: str, routing_hint: dict[str, Any] | None):
     llm_needs = bool(routing_hint["needs_retrieval"])
     confidence = float(routing_hint["confidence"])
     mode: AnswerMode = routing_hint["answer_mode"]
-    reasons: list[str] = []
-    # 低置信度强制闸分级：会话/记忆类回答漏检索代价小，尊重大模型判定；
-    # 只有明确走小说证据路径的判定才维持严格置信度闸。
+    # 低置信度保守兜底：模型判 novel_evidence 却信心不足时，先预检索一次，
+    # 不把"检索与否"押注在低置信输出上。
     if mode == "novel_evidence" and confidence < settings.query_routing_confidence_threshold:
-        reasons.append("low_confidence")
-    if _strong_novel_signal(f"{query} {routing_hint.get('original', '')}"):
-        reasons.append("strong_novel_signal")
-    if mode == "novel_evidence":
-        reasons.append("novel_evidence_mode")
+        return True, "required", "forced_by_low_confidence", "novel_evidence", policy_out, preference_update, _routing_metadata(
+            llm_needs_retrieval=llm_needs,
+            override=True,
+            reason="low_confidence",
+            confidence=confidence,
+        )
+    # 强小说信号覆盖：明确指向小说内容的词压过模型"不需要检索"的判定。
+    if not llm_needs and _strong_novel_signal(f"{query} {routing_hint.get('original', '')}"):
+        return True, "required", "forced_by_strong_novel_signal", "novel_evidence", policy_out, preference_update, _routing_metadata(
+            llm_needs_retrieval=False,
+            override=True,
+            reason="strong_novel_signal",
+            confidence=confidence,
+        )
     if llm_needs:
-        return True, str(routing_hint["retrieval_reason"]), mode, policy, preference_update, _routing_metadata(
+        return True, "optional", str(routing_hint["retrieval_reason"]), mode, policy_out, preference_update, _routing_metadata(
             llm_needs_retrieval=True,
             override=False,
             reason="",
             confidence=confidence,
         )
-    if reasons:
-        return True, "forced_by_" + reasons[0], "novel_evidence", policy, preference_update, _routing_metadata(
-            llm_needs_retrieval=False,
-            override=True,
-            reason=";".join(reasons),
-            confidence=confidence,
-        )
-    return False, str(routing_hint["retrieval_reason"]), mode, policy, preference_update, _routing_metadata(
+    return False, "forbidden", str(routing_hint["retrieval_reason"]), mode, policy_out, preference_update, _routing_metadata(
         llm_needs_retrieval=False,
         override=False,
         reason="",
@@ -159,11 +171,17 @@ def _routing_choice(query: str, routing_hint: dict[str, Any] | None):
     )
 
 
-def normalize_strategy(requested_strategy: str | None, query: str) -> Strategy:
-    """将用户输入归一化为受支持的执行策略；未知值保持旧的 direct 回退。"""
+def normalize_strategy(requested_strategy: str | None, query: str, needs_retrieval: bool = True) -> Strategy:
+    """将用户输入归一化为受支持的执行策略；未知值保持旧的 direct 回退。
+
+    auto 即混合路由：复杂小说分析（多信号/长问题且确需检索）走 multi_expert
+    固定流水线，其余一律进入自主 react——react 是普通问答的本体架构。
+    """
     value = (requested_strategy or "auto").strip().lower()
     if value == "auto":
-        return Strategy.MULTI_EXPERT if is_complex_query(query) else Strategy.DIRECT
+        if needs_retrieval and is_complex_query(query):
+            return Strategy.MULTI_EXPERT
+        return Strategy.REACT
     return _STRATEGY_ALIASES.get(value, Strategy.DIRECT)
 
 
@@ -189,26 +207,26 @@ def _decision_metadata(
 
 
 def route_query(query: str, requested_strategy: str | None = None, routing_hint: dict[str, Any] | None = None) -> RouteDecision:
-    strategy = normalize_strategy(requested_strategy, query)
-    needs_retrieval, reason, answer_mode, output_policy, preference_update, routing = _routing_choice(query, routing_hint)
+    needs_retrieval, policy, reason, answer_mode, output_policy, preference_update, routing = _routing_choice(query, routing_hint)
+    strategy = normalize_strategy(requested_strategy, query, needs_retrieval)
     kwargs = _decision_metadata(
         needs_retrieval=needs_retrieval,
         reason=reason,
         answer_mode=answer_mode,
         output_policy=output_policy,
         preference_update=preference_update,
-        routing=routing,
+        routing={**routing, "retrieval_policy": policy},
     )
     if strategy is Strategy.DIRECT:
+        # direct = 短路径档：允许一次自主 RAG 决策，预算收紧到 2 步。
         intent = "fact_lookup" if needs_retrieval else "conversation"
-        tools = ("retrieve_novel",) if needs_retrieval else ()
-        return RouteDecision(intent, strategy, tools, 2, **kwargs)
+        return RouteDecision(intent, strategy, ("retrieve_novel", "get_chapter_context", "calculator"), 2, **kwargs)
     if strategy is Strategy.MULTI_EXPERT:
         if not needs_retrieval:
             return RouteDecision(
                 "conversation",
                 Strategy.DIRECT,
-                (),
+                ("retrieve_novel", "get_chapter_context", "calculator"),
                 2,
                 **{
                     **kwargs,
@@ -218,7 +236,6 @@ def route_query(query: str, requested_strategy: str | None = None, routing_hint:
                 },
             )
         return RouteDecision("novel_analysis", strategy, ("retrieve_novel", "get_chapter_context"), max(3, settings.agent_max_steps), **kwargs)
-    tools = ("retrieve_novel", "get_chapter_context", "calculator") if needs_retrieval else ("calculator",)
-    max_steps = max(3, settings.agent_max_steps) if needs_retrieval else 2
+    max_steps = max(3, settings.agent_max_steps) + (1 if strategy is Strategy.PLAN_EXECUTE else 0)
     intent = "tool_augmented_question" if strategy is Strategy.REACT else "multi_step_novel_question"
-    return RouteDecision(intent, strategy, tools, max_steps, **kwargs)
+    return RouteDecision(intent, strategy, ("retrieve_novel", "get_chapter_context", "calculator"), max_steps, **kwargs)

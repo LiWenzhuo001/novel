@@ -1,0 +1,7 @@
+# 构建上下文只保留源码与配置；本地依赖与产物一律不进上下文
+node_modules/
+dist/
+*.log
+.vite/
+.vscode/
+.DS_Store

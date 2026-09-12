@@ -1,0 +1,20 @@
+# 防止密钥与本地状态被 COPY . . 烧进镜像层（DEPLOY.md「随包文件」一节）
+.env
+.env.*
+!.env.example
+
+# 本地数据与缓存
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mimosa/
+.idea/
+.venv/
+venv/
+
+# 测试与脚本产物（镜像只需运行时依赖与 app/）
+tests/
+backend/.backend.log
+*.log

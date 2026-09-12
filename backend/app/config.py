@@ -101,7 +101,9 @@ class Settings:
         self.top_k = int(os.getenv("TOP_K", "5"))
 
         # ===== RAG 检索质量参数 =====
-        # 相似度阈值：低于此分数的结果会被过滤掉（cosine distance → score = 1 - distance）
+        # 相似度阈值：低于此分数的结果会被过滤掉（cosine distance → score = 1 - distance）。
+        # 注意：仅作用于纯向量路径；混合检索主路径（hybrid=True）不做分数闸，
+        # 候选由"至少出现在一个通道"决定，Top-K 只砍数量不过滤分数。
         self.similarity_threshold = float(os.getenv("SIMILARITY_THRESHOLD", "0.3"))
         # 混合检索：向量 + 全文（PostgreSQL FTS），用 RRF 融合
         self.enable_hybrid_search = os.getenv("ENABLE_HYBRID_SEARCH", "true").lower() == "true"
@@ -187,6 +189,27 @@ class Settings:
         self.novel_context_k = max(self.top_k, int(os.getenv("NOVEL_CONTEXT_K", "8")))
         self.novel_neighbor_window = max(0, min(3, int(os.getenv("NOVEL_NEIGHBOR_WINDOW", "1"))))
 
+        # ===== Agent 思考流（reasoning 展示，实验能力） =====
+        # 服务端 EXPOSE_RAW_REASONING 决定 reasoning 原文是否过网络；
+        # 前端"显示思考过程"开关只决定已收到内容是否渲染，两者职责不同。
+        # 生产默认 false（脱敏）；本地演示显式开启。
+        self.expose_raw_reasoning = os.getenv("EXPOSE_RAW_REASONING", "false").lower() == "true"
+        self.agent_reasoning_enabled = os.getenv("AGENT_REASONING_ENABLED", "true").lower() == "true"
+        # 留空回退主模型普通模式（无 reasoning 输出，特性休眠）；指向 reasoner 模型后生效。
+        self.agent_reasoning_model = os.getenv("AGENT_REASONING_MODEL", "").strip()
+        # DeepSeek 不支持 effort/budget 字段：仅 OpenAI 系 provider 发送，其余忽略（best-effort）。
+        self.agent_reasoning_effort = os.getenv("AGENT_REASONING_EFFORT", "medium").strip().lower()
+        if self.agent_reasoning_effort not in {"low", "medium", "high"}:
+            raise ValueError("AGENT_REASONING_EFFORT 仅支持 low / medium / high")
+        # 实测专家类长任务思考 3000-4000 字 ≈ 2800+ token：预算太小会把输出烧尽
+        # 导致正文为空（由主模型补生成兜底），4096 让多数专家一次产出正文。
+        self.agent_reasoning_budget = max(0, min(32768, int(os.getenv("AGENT_REASONING_BUDGET", "4096"))))
+        self.agent_expert_reasoning_enabled = os.getenv("AGENT_EXPERT_REASONING_ENABLED", "true").lower() == "true"
+        self.agent_plan_reasoning_enabled = os.getenv("AGENT_PLAN_REASONING_ENABLED", "true").lower() == "true"
+        # reflect 当前是规则节点无模型调用，此开关保留但本期惰性。
+        self.agent_reflect_reasoning_enabled = os.getenv("AGENT_REFLECT_REASONING_ENABLED", "false").lower() == "true"
+        self.agent_answer_reasoning_enabled = os.getenv("AGENT_ANSWER_REASONING_ENABLED", "false").lower() == "true"
+
         # 小说索引切分参数。索引完成时写入 knowledge_files，避免静默混用不同版本。
         self.novel_chunk_size = max(200, int(os.getenv("NOVEL_CHUNK_SIZE", "650")))
         self.novel_chunk_overlap = max(0, int(os.getenv("NOVEL_CHUNK_OVERLAP", "120")))
@@ -238,6 +261,7 @@ class Settings:
             self.novel_context_k, int(os.getenv("RERANKER_CANDIDATE_N", str(self.hybrid_candidate_k)))
         )
         # 开启重排后候选阶段使用更宽松阈值，最终相关性由 cross-encoder 决定。
+        # 注意：与 similarity_threshold 一样仅作用于纯向量路径，混合检索主路径不生效。
         self.reranker_candidate_threshold = min(
             1.0, max(0.0, float(os.getenv("RERANKER_CANDIDATE_THRESHOLD", "0.15")))
         )

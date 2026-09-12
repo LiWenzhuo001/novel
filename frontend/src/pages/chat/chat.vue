@@ -8,7 +8,6 @@ import { showToast } from '../../utils/toast'
 
 const router = useRouter()
 const role = 'student'
-const agentStrategy = ref<'auto' | 'direct' | 'multi_expert'>('auto')
 const chatRef = ref<InstanceType<typeof ChatPanel>>()
 const libraryFiles = ref<KBFileInfo[]>([])
 const selectedFileId = ref<string | null>(localStorage.getItem('novel_selected_file_id'))
@@ -290,21 +289,10 @@ void loadNovels()
     <main class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
       <div class="shrink-0 px-5 pt-3 flex items-center justify-between gap-3">
         <div class="flex items-center gap-2 min-w-0">
-          <div class="flex items-center rounded-lg border border-black/[0.08] bg-white p-0.5" role="group" aria-label="Agent 策略">
-            <button
-              v-for="item in ([
-                { value: 'direct', label: '单智能体' },
-                { value: 'auto', label: '智能路由' },
-                { value: 'multi_expert', label: '多专家协作' },
-              ] as const)"
-              :key="item.value"
-              class="rounded-md px-2.5 py-1.5 text-[11px] transition-colors"
-              :class="agentStrategy === item.value ? 'bg-ink text-white' : 'text-ink-mute hover:bg-paper'"
-              :aria-pressed="agentStrategy === item.value"
-              @click="agentStrategy = item.value"
-            >
-              {{ item.label }}
-            </button>
+          <div class="flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-medium text-ink-soft ring-1 ring-black/[0.06]">
+            <Icon name="sparkles" :size="12" class="text-brand-500" />
+            智能体模式
+            <span class="text-ink-faint">· 按需自动检索 / 多专家协作</span>
           </div>
         </div>
         <span v-if="canChat" class="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">
@@ -318,7 +306,7 @@ void loadNovels()
         ref="chatRef"
         :role="role"
         domain="novel"
-        :strategy="agentStrategy"
+        strategy="auto"
         :file-id="selectedFileId"
         :session-key="sessionKey"
         :suggestions="suggestions"

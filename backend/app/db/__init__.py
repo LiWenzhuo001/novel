@@ -3,17 +3,25 @@
 提供：
 - async_engine / AsyncSessionLocal / Base
 - get_db 依赖（FastAPI 用，AsyncSession）
-- init_db：启动等待 Postgres 就绪、启用 vector 扩展并建表（幂等）
+- 启动期就绪检查：连接可达、迁移版本与 Alembic head 一致、向量维度匹配
+
+迁移权威是 Alembic（backend/alembic/versions/）：
+- 全新数据库：由 initdb/01-extensions.sql 安装扩展，再 `alembic upgrade head`；
+- 存量数据库：执行校准迁移 20260912_0016 对齐结构；
+- 应用启动只做只读检查，**绝不执行任何 schema DDL**——检查失败即启动失败，
+  不允许应用自动"修复" schema（避免双权威漂移，详见 20260912_0016 docstring）。
 
 说明：
-- 全部使用 SQLAlchemy 2.0 风格 select()/session.execute()，不再用 1.x 的 query()。
+- 就绪检查零 SQL：连接探活由 pool_pre_ping 在租借时完成，迁移版本经
+  MigrationContext 读取，向量维度走表反射——全部是 SQLAlchemy 原生接口。
 - pgvector 的 Vector 列、cosine_distance 比较器、TSVECTOR 生成列在异步下同样可用。
-- 启动时会为历史数据库补充缺失列，保证渐进式升级不影响已有数据。
 """
 import asyncio
+from pathlib import Path
 
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from alembic.config import Config as AlembicConfig
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -28,7 +36,7 @@ ASYNC_DATABASE_URL = settings.async_database_url
 
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    pool_pre_ping=True,  # 自动剔除失效连接
+    pool_pre_ping=True,  # 连接租借时自动探活，失效连接自动重建
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -50,193 +58,80 @@ async def get_db():
         yield session
 
 
-async def init_db(max_retries: int = 30, retry_interval: float = 2.0) -> None:
-    """等待 Postgres 就绪并初始化（幂等）。
+def _alembic_head() -> str:
+    """从迁移脚本目录读取当前 head（单一事实来源，不硬编码版本号）。"""
+    alembic_ini = Path(__file__).resolve().parents[2] / "alembic.ini"
+    script = ScriptDirectory.from_config(AlembicConfig(str(alembic_ini)))
+    return script.get_current_head()
 
-    1) 重试连接（docker-compose 中后端依赖 postgres 的 healthcheck，
-       本地直接跑也可能遇到 Postgres 尚未就绪，这里做重试兜底）；
-    2) 启用 pgvector 扩展（仅需一次；docker 环境下由 initdb 脚本预建）；
-    3) 创建所有表；
-    4) 为 embeddings.embedding 建 HNSW 索引、为 search_vector 建 GIN 索引。
+
+async def check_database_connection(max_retries: int = 5, retry_interval: float = 2.0) -> None:
+    """等待 Postgres 可连接；失败抛出。
+
+    探活由 pool_pre_ping 在连接租借时完成（租借成功即数据库可达），
+    这里只做重试循环——compose 健康检查已门禁，重试是本地直跑的兜底。
     """
     last_err: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
-            async with async_engine.connect() as conn:
-                pass
-            break
-        except OperationalError as e:
-            last_err = e
+            async with async_engine.connect():
+                return
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
             if attempt < max_retries:
                 await asyncio.sleep(retry_interval)
-    else:
-        raise last_err  # type: ignore[misc]
+    raise RuntimeError(f"PostgreSQL 不可连接（重试 {max_retries} 次）：{last_err}") from last_err
 
-    # 启用 pgvector 扩展（非超级用户无权限时跳过，依赖 initdb 脚本预建）
-    try:
-        async with async_engine.begin() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-    except Exception as e:  # noqa: BLE001
-        print(f"[INFO] 跳过 CREATE EXTENSION vector（可能已由初始化脚本创建或无权限）：{e}")
 
-    # pg_trgm 用于中文关键词 ILIKE/相似度召回；无权限时运行期自动退回 simple FTS。
-    try:
-        async with async_engine.begin() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-    except Exception as e:  # noqa: BLE001
-        print(f"[INFO] 跳过 CREATE EXTENSION pg_trgm（中文词法检索将回退）：{e}")
+async def check_schema_revision() -> str:
+    """校验 alembic_version 与迁移链 head 严格一致；落后/超前/未初始化均抛出。
 
-    # 建表（同步 DDL，经 run_sync 在异步连接上执行）
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        dimension_result = await conn.execute(text("""
-            SELECT a.atttypmod
-            FROM pg_attribute AS a
-            JOIN pg_class AS c ON c.oid = a.attrelid
-            JOIN pg_namespace AS n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public'
-              AND c.relname = 'embeddings'
-              AND a.attname = 'embedding'
-              AND NOT a.attisdropped
-        """))
-        actual_dimension = dimension_result.scalar_one_or_none()
-        if actual_dimension is not None and int(actual_dimension) != settings.embed_dim:
-            raise RuntimeError(
-                f"embeddings.embedding 当前为 {actual_dimension} 维，"
-                f"运行配置要求 {settings.embed_dim} 维；请先执行向量维度迁移。"
-            )
-        # 轻量"迁移"：给已存在的表补新增列（create_all 不会为已有表加列，幂等）
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100) DEFAULT ''"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP"))
-        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
-        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email) WHERE email IS NOT NULL"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS error TEXT"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS lease_id VARCHAR(64)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS lease_until TIMESTAMP"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS index_version VARCHAR(255)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(255)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS embed_dim INTEGER"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chunk_size INTEGER"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chunk_overlap INTEGER"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS indexed_at TIMESTAMP"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_count INTEGER"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS unassigned_chunk_count INTEGER"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_parse_status VARCHAR(32)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_parser_mode VARCHAR(32)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_parser_version VARCHAR(64)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS detected_encoding VARCHAR(32)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS index_warning TEXT"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS source_hash VARCHAR(64)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_rule_json TEXT"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_rule_confidence DOUBLE PRECISION"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_rule_validated BOOLEAN DEFAULT false"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_detection_model VARCHAR(255)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_detection_prompt_version VARCHAR(64)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_detection_error TEXT"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS chapter_detection_requested BOOLEAN DEFAULT false"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS index_stage VARCHAR(32)"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS index_progress INTEGER"))
-        await conn.execute(text("ALTER TABLE knowledge_files ADD COLUMN IF NOT EXISTS index_message VARCHAR(255)"))
-        await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS file_id VARCHAR(32)"))
-        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_chat_sessions_file_id ON chat_sessions (file_id)"))
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS conversation_summaries (
-                id VARCHAR(32) PRIMARY KEY,
-                session_id VARCHAR(32) NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-                user_id VARCHAR(64) NOT NULL,
-                summary TEXT NOT NULL DEFAULT '',
-                covered_message_id INTEGER NOT NULL DEFAULT 0,
-                token_estimate INTEGER NOT NULL DEFAULT 0,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            )
-        """))
-        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_conversation_summaries_session_id ON conversation_summaries (session_id)"))
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS agent_memories (
-                id VARCHAR(32) PRIMARY KEY,
-                user_id VARCHAR(64) NOT NULL,
-                session_id VARCHAR(32) REFERENCES chat_sessions(id) ON DELETE CASCADE,
-                file_id VARCHAR(32),
-                memory_type VARCHAR(32) NOT NULL DEFAULT 'session_fact',
-                preference_key VARCHAR(64),
-                memory_version INTEGER NOT NULL DEFAULT 1,
-                content TEXT NOT NULL,
-                embedding vector,
-                importance DOUBLE PRECISION NOT NULL DEFAULT 0.5,
-                source_message_id INTEGER,
-                expires_at TIMESTAMP,
-                meta_json TEXT DEFAULT '{}',
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            )
-        """))
-        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_agent_memories_user_file ON agent_memories (user_id, file_id)"))
-        await conn.execute(text("ALTER TABLE agent_memories ADD COLUMN IF NOT EXISTS preference_key VARCHAR(64)"))
-        await conn.execute(text("ALTER TABLE agent_memories ADD COLUMN IF NOT EXISTS memory_version INTEGER NOT NULL DEFAULT 1"))
-        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_agent_memories_user_preference ON agent_memories (user_id, memory_type, preference_key)"))
-        # 多租户与知识领域隔离列：历史数据归入默认用户和 career 域，保持旧功能可见。
-        for tbl in ("embeddings", "knowledge_files", "chat_sessions"):
-            await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS user_id VARCHAR(64)"))
-            await conn.execute(
-                text(f"UPDATE {tbl} SET user_id = :u WHERE user_id IS NULL").bindparams(u=settings.default_user)
-            )
-            await conn.execute(
-                text(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS domain VARCHAR(32) DEFAULT 'career'")
-            )
-            await conn.execute(text(f"UPDATE {tbl} SET domain = 'career' WHERE domain IS NULL"))
-            await conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{tbl}_domain ON {tbl} (domain)"))
-        for column, sql_type in (
-            ("chapter", "VARCHAR(255)"),
-            ("chapter_no", "INTEGER"),
-            ("chunk_no", "INTEGER"),
-            ("page", "INTEGER"),
-        ):
-            await conn.execute(text(f"ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS {column} {sql_type}"))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_embeddings_novel_location "
-            "ON embeddings (user_id, domain, file_id, chapter_no, chunk_no)"
-        ))
+    落后的修复命令：alembic upgrade head；超前说明数据库比应用新，请升级应用。
+    """
+    head = _alembic_head()
 
-    # HNSW 索引（余弦检索加速）+ GIN 索引（全文检索加速）
-    async with async_engine.begin() as conn:
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS embeddings_embedding_idx "
-                "ON embeddings USING hnsw (embedding vector_cosine_ops)"
-            )
+    def _current_revision(sync_conn) -> str | None:
+        return MigrationContext.configure(sync_conn).get_current_revision()
+
+    async with async_engine.connect() as conn:
+        current = await conn.run_sync(_current_revision)
+    if current is None:
+        raise RuntimeError("数据库尚未初始化迁移版本。请先执行：alembic upgrade head")
+    if current != head:
+        raise RuntimeError(
+            f"迁移版本不一致：数据库在 {current}，应用期望 {head}。"
+            "请执行：alembic upgrade head（版本超前时请先升级应用代码）"
         )
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS embeddings_search_vector_idx "
-                "ON embeddings USING gin (search_vector)"
-            )
-        )
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS agent_memories_embedding_idx "
-                "ON agent_memories USING hnsw (embedding vector_cosine_ops)"
-            )
-        )
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_agent_memories_scope_active "
-                "ON agent_memories (user_id, session_id, file_id, importance, updated_at)"
-            )
-        )
+    return current
 
-    # 中文关键词 ILIKE 由 trigram GIN 加速；扩展不可用时不阻断启动。
-    try:
-        async with async_engine.begin() as conn:
-            await conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS embeddings_content_trgm_idx "
-                "ON embeddings USING gin (content gin_trgm_ops)"
-            ))
-    except Exception as e:  # noqa: BLE001
-        print(f"[INFO] 跳过 embeddings_content_trgm_idx（中文词法检索将回退）：{e}")
+
+async def check_embedding_dimension() -> int:
+    """只读校验 embeddings.embedding 维度与 EMBED_DIM 一致；不匹配抛出。
+
+    维度变更的正确路径：改 .env 的 EMBED_DIM → 备份 → 维度专用迁移 →
+    全量重索引（scripts/reindex_file.py）。应用不做自动迁移。
+    """
+
+    def _reflect_dim(sync_conn) -> int | None:
+        from sqlalchemy import inspect
+
+        for column in inspect(sync_conn).get_columns("embeddings"):
+            if column["name"] == "embedding":
+                return getattr(column["type"], "dim", None)
+        return None
+
+    async with async_engine.connect() as conn:
+        dim = await conn.run_sync(_reflect_dim)
+    if dim is None:
+        raise RuntimeError("embeddings.embedding 列缺失。请执行：alembic upgrade head")
+    if dim != settings.embed_dim:
+        raise RuntimeError(
+            f"向量维度不匹配：数据库为 {dim} 维，EMBED_DIM={settings.embed_dim}。"
+            "请核对 .env 的 EMBED_DIM 与 embedding 模型，并按 README 处理维度变更。"
+        )
+    return settings.embed_dim
+
+
+async def dispose_database() -> None:
+    """应用关闭时释放连接池。"""
+    await async_engine.dispose()
