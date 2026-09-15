@@ -27,10 +27,68 @@ const authHeaders = (extra: Record<string, string> = {}) => {
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
 }
 
+// 参数校验（422）错误的中文化：FastAPI/pydantic 的 detail 是数组，每条带
+// loc（字段路径）/type（错误类型）/ctx（上下文参数）/msg（英文描述）。
+// 只在这里做字段名与错误类型的中文映射，不改后端错误契约。
+const FIELD_LABELS: Record<string, string> = {
+  username: '用户名',
+  password: '密码',
+  email: '邮箱',
+  display_name: '显示名称',
+  message: '消息内容',
+  file_id: '小说 ID',
+  session_id: '会话 ID',
+  history: '对话历史',
+  personas: '在场人物',
+  chapter_until: '剧情截至章节',
+  max_steps: '执行步数',
+  strategy: '执行策略',
+  interaction_mode: '交互模式',
+  memory_mode: '记忆开关',
+  names: '人物名列表',
+  title: '标题',
+}
+
+const describeValidationError = (e: any): string => {
+  const loc: string[] = Array.isArray(e?.loc) ? e.loc.map((p: unknown) => String(p)) : []
+  const fieldKey = loc.find((p: string) => p !== 'body') || ''
+  const field = FIELD_LABELS[fieldKey] || fieldKey
+  const type = String(e?.type || '')
+  const ctx = e?.ctx || {}
+  const msg = String(e?.msg || '')
+  switch (type) {
+    case 'string_too_short':
+      return ctx?.min_length != null
+        ? `${field}至少 ${ctx.min_length} 个字符`
+        : `${field}过短`
+    case 'string_too_long':
+      return ctx?.max_length != null
+        ? `${field}最多 ${ctx.max_length} 个字符`
+        : `${field}过长`
+    case 'missing':
+      return field ? `请填写${field}` : '请填写必填项'
+    case 'value_error':
+      // 后端自定义校验器的 msg 本身是中文（如"interaction_mode=roleplay 需要 1~3 个 personas"）
+      return msg.replace(/^Value error,\s*/, '')
+    case 'greater_than_equal':
+      return `${field}不能小于 ${ctx?.ge ?? '下限'}`
+    case 'less_than_equal':
+      return `${field}不能大于 ${ctx?.le ?? '上限'}`
+    default:
+      return field ? `${field}：${msg || '取值不合法'}` : (msg || '参数不合法')
+  }
+}
+
 const readErrorDetail = async (res: Response, fallback = `HTTP ${res.status}`) => {
   try {
     const payload = await res.json()
-    return payload?.detail || fallback
+    const detail = payload?.detail
+    // FastAPI 422 的 detail 是数组（每个不合法字段一条错误对象），拼成人话再展示，
+    // 否则会渲染成 [object Object]。
+    if (Array.isArray(detail)) {
+      return detail.map(describeValidationError).filter(Boolean).join('；') || fallback
+    }
+    return detail || fallback
   } catch {
     return fallback
   }
@@ -217,7 +275,7 @@ export const selectWorldCharacters = (fileId: string, names: string[], chapterUn
     file_id: fileId, names, chapter_until: chapterUntil,
   })
 export const getMessages = (sessionId: string) =>
-  request<{ id: number; role: string; content: string; sources: SourceItem[] }[]>(
+  request<{ id: number; role: string; content: string; sources: SourceItem[]; status?: string }[]>(
     `/chat/sessions/${sessionId}/messages`,
   )
 
@@ -276,6 +334,8 @@ export interface ThinkingStart {
   agent?: string
   label?: string
   phase: ThinkingPhase
+  // 主 Agent 推理轮次（1 起计）：与工具调用序号、计划步骤编号语义分离
+  reasoning_round?: number
   step?: number
   retry?: number
   status?: string
@@ -295,6 +355,7 @@ export interface ThinkingEnd {
   agent?: string
   phase: ThinkingPhase
   status: 'completed' | 'error' | 'timeout' | 'cancelled' | 'corrected'
+  reasoning_round?: number
   reasoning_chars?: number
   truncated?: boolean
   latency_ms?: number
@@ -302,6 +363,7 @@ export interface ThinkingEnd {
 
 export interface StreamHandlers {
   onSession?: (id: string) => void
+  onRunStarted?: (value: any) => void
   onMemoryContext?: (value: MemoryContext & { count?: number }) => void
   onMemoryUpdated?: (value: any) => void
   onRoute?: (value: any) => void
@@ -314,7 +376,6 @@ export interface StreamHandlers {
   onStepStart?: (value: any) => void
   onObservation?: (value: any) => void
   onReflection?: (value: any) => void
-  onExpertTasks?: (value: any) => void
   onValidation?: (value: any) => void
   onSources?: (s: SourceItem[]) => void
   onToken?: (t: string) => void
@@ -326,8 +387,10 @@ export interface StreamHandlers {
   onError?: (e: any) => void
 }
 
-// 通过 fetch 读取 SSE，保持专家过程事件与最终答案 token 的独立回调。
+// 通过 fetch 读取 SSE，保持工具过程事件与最终答案 token 的独立回调。
+// expert_tasks/report_validation 已随专家链移除；旧事件若出现将被静默忽略。
 const JSON_EVENT_HANDLERS: Record<string, keyof StreamHandlers> = {
+  run_started: 'onRunStarted',
   memory_context: 'onMemoryContext',
   memory_updated: 'onMemoryUpdated',
   route: 'onRoute',
@@ -340,7 +403,6 @@ const JSON_EVENT_HANDLERS: Record<string, keyof StreamHandlers> = {
   step_start: 'onStepStart',
   observation: 'onObservation',
   reflection: 'onReflection',
-  expert_tasks: 'onExpertTasks',
   validation: 'onValidation',
   sources: 'onSources',
   tool_start: 'onToolStart',
@@ -441,7 +503,9 @@ export const streamChat = (
     message: string
     role: string
     domain?: 'novel'
-    strategy?: 'auto' | 'direct' | 'multi_expert' | 'react' | 'plan_execute' | 'roleplay'
+    // 三种实际执行策略 + auto（入口路由）；旧值 multi_expert/roleplay 已废弃。
+    strategy?: 'auto' | 'direct' | 'react' | 'plan_execute'
+    interaction_mode?: 'qa' | 'roleplay'
     max_steps?: number
     memory_mode?: 'auto' | 'off'
     history?: any[]

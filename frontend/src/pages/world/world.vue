@@ -401,7 +401,7 @@ watch(selectedNames, () => saveConfig())
           :key="sessionKey"
           role="student"
           domain="novel"
-          strategy="roleplay"
+          strategy="auto"
           :file-id="selectedFileId"
           :session-key="sessionKey"
           :assistant-names="assistantNames"
@@ -412,6 +412,7 @@ watch(selectedNames, () => saveConfig())
           :notice="chapterUntil ? `剧情进行到第 ${chapterUntil} 章 · 人物只记得此前经历` : '人物知晓全书剧情'"
           :opening-message="openingMessage"
           :extra-payload="{
+            interaction_mode: 'roleplay',
             personas: [...selectedNames],
             chapter_until: chapterUntil || undefined,
           }"

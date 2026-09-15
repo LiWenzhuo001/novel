@@ -14,7 +14,7 @@ const props = withDefaults(defineProps<{
   notice?: string
   sessionKey?: string
   domain?: 'novel'
-  strategy?: 'auto' | 'direct' | 'multi_expert' | 'react' | 'plan_execute' | 'roleplay'
+  strategy?: 'auto' | 'direct' | 'react' | 'plan_execute'
   fileId?: string | null
   assistantNames?: string[]
   placeholder?: string
@@ -37,7 +37,6 @@ const props = withDefaults(defineProps<{
   openingMessage: '',
   citationPanel: false,
 })
-type ExpertTask = { label?: string; task?: string }
 
 const sourceChapterLabel = (source: SourceItem) => {
   if (!source.chapter || source.chapter === '未分章') return '未识别章节'
@@ -65,8 +64,6 @@ const value = source.score.toFixed(2)
   }
   return `${labels[source.score_type]} ${value}`
 }
-type ExpertTaskMap = Record<string, ExpertTask>
-
 type ToolStep = {
   id?: string
   tool?: string
@@ -74,6 +71,10 @@ type ToolStep = {
   label?: string
   task?: string
   step?: number
+  // 语义编号：plan_step_id=计划项编号；tool_call_index=全局工具调用序号。
+  // 两者都不存在时回退旧 step 字段展示。
+  plan_step_id?: number
+  tool_call_index?: number
   retry?: number
   status?: 'running' | 'ok' | 'corrected' | 'invalid' | 'timeout' | 'fallback' | 'error' | 'fallback_generation' | 'empty_output'
   summary?: string
@@ -87,8 +88,6 @@ type ChatMessage = {
   content: string
   sources?: SourceItem[]
   tools?: ToolStep[]
-  expertTasks?: ExpertTaskMap
-  dispatchMode?: string
   rendered?: string
   route?: any
   ragCalled?: boolean
@@ -96,15 +95,27 @@ type ChatMessage = {
   reflection?: Reflection
   decisions?: AgentDecision[]
   validation?: any
+  incomplete?: boolean
+  effectiveStrategy?: string
+  grounding?: string
   mainThinking?: ThinkingItem[]
   expertThinking?: Record<string, ThinkingItem[]>
   memoryContext?: MemoryContext
   outputPolicy?: OutputPolicy
 }
 
-type PlanStep = { step?: number; action?: string; purpose?: string }
-type Reflection = { decision?: string; reason?: string; step?: number }
-type AgentDecision = { action?: string; reason?: string; step?: number }
+type PlanStep = {
+  step?: number
+  id?: number
+  action?: string
+  purpose?: string
+  objective?: string
+  query?: string
+  status?: string
+  reason?: string
+}
+type Reflection = { decision?: string; reason?: string; step?: number; reasoning_round?: number }
+type AgentDecision = { action?: string; reason?: string; step?: number; reasoning_round?: number }
 type ThinkingStream = 'main_agent' | 'multi_agent'
 type ThinkingPhase = 'decide' | 'plan' | 'reflect' | 'reasoning'
 
@@ -116,6 +127,7 @@ type ThinkingItem = {
   phase: ThinkingPhase
   status: 'running' | 'completed' | 'error' | 'timeout' | 'cancelled' | 'corrected'
   text: string
+  reasoning_round?: number
   step?: number
   retry?: number
   reasoning_chars?: number
@@ -135,6 +147,24 @@ const toggleThinking = () => {
 }
 const phaseLabel = (phase: string) =>
   (({ decide: '决策', plan: '计划', reflect: '反思', reasoning: '分析' } as Record<string, string>)[phase] || phase)
+// 计划步骤状态：delegated=分析/比较/总结类目标，由汇总节点完成（无工具调用）。
+const planStatusLabel = (s: { status?: string; reason?: string }) => {
+  const labels: Record<string, string> = {
+    pending: '待执行',
+    done: '完成',
+    failed: '失败',
+    skipped: '已跳过',
+    invalid: '无效步骤已忽略',
+    delegated: '由汇总节点完成',
+  }
+  const base = labels[s.status || ''] || s.status || ''
+  return base + (s.reason && (s.status === 'skipped' || s.status === 'invalid') ? `（${s.reason}）` : '')
+}
+const planStatusClass = (status?: string) =>
+  status === 'done' ? 'text-emerald-600'
+    : status === 'failed' || status === 'invalid' ? 'text-rose-500'
+      : status === 'delegated' ? 'text-brand-600'
+        : 'text-ink-faint'
 const thinkingStatus = (t: ThinkingItem) => {
   if (t.status === 'running') return '推理中…'
   const base = (({
@@ -264,6 +294,8 @@ const ensureSession = (createIfMissing = false) => {
           content: m.content,
           sources: m.sources || [],
           rendered: renderMd(m.content),
+          // partial/failed 的残缺回答明确标记，不再冒充完整历史。
+          incomplete: !!m.status && m.status !== 'completed',
         }))
         // 空会话同样复用：落穿新建会在多会话场景持续制造孤儿。
         maybeInsertOpening()
@@ -379,7 +411,8 @@ const send = async () => {
         const m = messages.value[aiIndex]
         const item: ThinkingItem = {
           id: t.id, stream: t.stream, agent: t.agent, label: t.label,
-          phase: t.phase, status: 'running', text: '', step: t.step, retry: t.retry,
+          phase: t.phase, status: 'running', text: '',
+          reasoning_round: t.reasoning_round, step: t.step, retry: t.retry,
         }
         if (t.stream === 'multi_agent') {
           if (!m.expertThinking) m.expertThinking = {}
@@ -431,39 +464,16 @@ const send = async () => {
         if (payload?.output_policy && m.memoryContext) m.memoryContext.output_policy = payload.output_policy
         // 检索与否的唯一事实来源：meta.rag_called（实际行为），路由建议不作展示依据
         if (payload && 'rag_called' in payload) m.ragCalled = !!payload.rag_called
-        scrollToBottom()
-      },
-      onExpertTasks: (payload) => {
-        const m = messages.value[aiIndex]
-        m.expertTasks = payload?.tasks || {}
-        m.dispatchMode = payload?.mode
+        // 统一策略观测：auto 实际解析到哪种执行模式 + 答案验证结果
+        if (payload?.effective_strategy) m.effectiveStrategy = payload.effective_strategy
+        if (payload?.grounding_status) m.grounding = payload.grounding_status
+        if (payload?.completion_status && payload.completion_status !== 'completed') m.incomplete = true
         scrollToBottom()
       },
       onValidation: (payload) => {
-        // 保存完整校验负载并在专家步骤上展示具体失败原因（缺失项/相似度），替代统一文案
-        const m = messages.value[aiIndex]
-        m.validation = payload
-        const agentLabel: Record<string, string> = {
-          character: '人物关系专家', plot: '情节发展专家',
-          timeline: '时间线专家', locator: '章节定位专家',
-        }
-        const results = payload?.reports || {}
-        for (const [agent, result] of Object.entries(results) as [string, any][]) {
-          const step = m.tools?.find((item) => item.agent === agent)
-          if (!step || result.contract_ok) continue
-          const reasons: string[] = []
-          if (result.missing_sections?.length) reasons.push(`缺少：${result.missing_sections.join('、')}`)
-          for (const flag of result.similarity_flags || []) {
-            reasons.push(`与${agentLabel[flag.agent] || flag.agent}重复度过高：${flag.score ?? '?'}`)
-          }
-          const reasonText = reasons.join('；') || '未通过契约校验'
-          if (payload?.retry) {
-            step.status = 'invalid'
-            step.summary = `纠偏后仍未通过：${reasonText}`
-          } else {
-            step.summary = `报告需要纠偏：${reasonText}`
-          }
-        }
+        // verify_answer 结果：grounding_status + issues（引用/事实校验）
+        messages.value[aiIndex].validation = payload
+        scrollToBottom()
       },
       onSources: (s) => (messages.value[aiIndex].sources = s),
       onToken: (t) => {
@@ -639,27 +649,26 @@ onUnmounted(() => {
                 <div v-else-if="m.memoryContext?.memories?.length" class="mb-2 text-[11px] text-brand-600">
                   <Icon name="sparkles" :size="11" class="inline" /> 使用 {{ m.memoryContext.memories.length }} 条记忆辅助回答
                 </div>
-                <div
-                  v-if="m.expertTasks && Object.keys(m.expertTasks).length"
-                  class="mb-2.5 rounded-lg bg-brand-50/60 px-3.5 py-3 ring-1 ring-brand-100"
-                >
-                  <div class="mb-2 flex items-center gap-2 text-[11px] font-semibold tracking-wide text-brand-700">
-                    <Icon name="sparkles" :size="12" />
-                    本轮专家任务分派
-                    <span v-if="m.dispatchMode" class="font-normal text-brand-400">· {{ m.dispatchMode }}</span>
-                  </div>
-                  <div class="grid gap-1.5 sm:grid-cols-2">
-                    <div
-                      v-for="(task, key) in m.expertTasks"
-                      :key="key"
-                      class="rounded-md bg-white/80 px-2.5 py-2 text-[11px] leading-4 text-ink-mute ring-1 ring-black/[0.05]"
-                    >
-                      <span class="font-semibold text-ink-soft">{{ task.label }}</span>
-                      <span class="ml-1">{{ task.task }}</span>
-                    </div>
-                  </div>
-                </div>
 
+                <!-- 未完成标记：partial/timeout/failed 的回答不可当作完整结论 -->
+                <div v-if="m.incomplete" class="mb-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] text-amber-700 ring-1 ring-amber-200">
+                  <Icon name="x" :size="11" /> 本轮回答未完成，内容可能不完整
+                </div>
+                <!-- 答案验证结果（verify_answer）：引用与事实支持性 -->
+                <div v-else-if="m.grounding" class="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
+                  <span
+                    v-if="m.grounding === 'verified' || m.grounding === 'repaired'"
+                    class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 ring-1 ring-emerald-200"
+                  >
+                    <Icon name="check" :size="11" /> {{ m.grounding === 'repaired' ? '引用已自动修正' : '已通过引用与事实验证' }}
+                  </span>
+                  <span v-else-if="m.grounding === 'insufficient_evidence'" class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 ring-1 ring-amber-200">
+                    <Icon name="x" :size="11" /> 证据不足
+                  </span>
+                  <span v-if="m.effectiveStrategy" class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 ring-1 ring-slate-200">
+                    执行模式 · {{ m.effectiveStrategy }}
+                  </span>
+                </div>
                 <!-- 主 Agent 推理（实验能力：展示模型返回的 reasoning，非完整思维链） -->
                 <div
                   v-if="showThinking && m.mainThinking?.length"
@@ -674,7 +683,7 @@ onUnmounted(() => {
                     <li v-for="t in m.mainThinking" :key="t.id">
                       <details :open="t.status === 'running'">
                         <summary class="cursor-pointer select-none text-[11px] text-slate-500">
-                          {{ phaseLabel(t.phase) }}<span v-if="t.step"> · 第 {{ t.step }} 步</span>
+                          {{ phaseLabel(t.phase) }}<span v-if="t.reasoning_round != null"> · 第 {{ t.reasoning_round }} 轮</span><span v-else-if="t.step"> · 第 {{ t.step }} 步</span>
                           <span class="ml-1 text-[10px]" :class="t.status === 'running' ? 'text-sky-600' : 'text-ink-faint'">{{ thinkingStatus(t) }}</span>
                         </summary>
                         <!-- 纯文本插值：reasoning 不走 Markdown 渲染器，禁止 v-html -->
@@ -741,13 +750,13 @@ onUnmounted(() => {
                       >
                         {{ d.action === 'tool_call' ? '调用工具' : d.action === 'plan' ? '制定计划' : '直接回答' }}
                       </span>
-                      <span class="min-w-0 flex-1 truncate">{{ d.reason }}<span v-if="d.step" class="text-ink-faint"> · 第 {{ d.step }} 步</span></span>
+                      <span class="min-w-0 flex-1 truncate">{{ d.reason }}<span v-if="d.reasoning_round != null" class="text-ink-faint"> · 第 {{ d.reasoning_round }} 轮</span><span v-else-if="d.step" class="text-ink-faint"> · 第 {{ d.step }} 步</span></span>
                     </li>
                   </ul>
                 </div>
-                <!-- 执行计划（仅模型真实制定时展示：静态执行框架不渲染，决策动态见「Agent 决策」） -->
+                <!-- 执行计划（plan_execute 的结构化步骤 / 各策略骨架；决策动态见「Agent 决策」） -->
                 <div
-                  v-if="m.plan?.some((s) => s.action === 'model_step')"
+                  v-if="m.plan?.length"
                   class="mb-2.5 rounded-lg bg-violet-50/60 px-3.5 py-3 ring-1 ring-violet-100"
                 >
                   <div class="mb-2 flex items-center gap-2 text-[11px] font-semibold tracking-wide text-violet-700">
@@ -756,12 +765,14 @@ onUnmounted(() => {
                   </div>
                   <ol class="space-y-1 text-[11px] leading-4 text-ink-mute">
                     <li
-                      v-for="s in m.plan"
-                      :key="s.step"
+                      v-for="(s, pi) in m.plan"
+                      :key="s.id ?? s.step ?? pi"
                       class="rounded-md bg-white/80 px-2.5 py-1.5"
                     >
-                      <span class="font-semibold text-ink-soft">{{ s.step }}.</span>
-                      {{ s.purpose }}
+                      <span class="font-semibold text-ink-soft">{{ s.id ?? s.step ?? (pi + 1) }}.</span>
+                      {{ s.objective || s.purpose || s.query }}
+                      <span v-if="s.action" class="ml-1 text-[10px] text-ink-faint">{{ s.action }}</span>
+                      <span v-if="s.status" class="ml-1 text-[10px]" :class="planStatusClass(s.status)">{{ planStatusLabel(s) }}</span>
                     </li>
                   </ol>
                 </div>
@@ -788,7 +799,8 @@ onUnmounted(() => {
                           <Icon v-else name="x" :size="12" class="text-rose-500" />
                         </span>
                         <span class="text-ink-soft">{{ t.label || t.tool }}</span>
-                        <span v-if="t.step" class="text-ink-faint">· 第 {{ t.step }} 步</span>
+                        <span v-if="t.plan_step_id != null" class="text-ink-faint">· 计划项 {{ t.plan_step_id }}</span>
+                        <span v-else-if="t.step" class="text-ink-faint">· 第 {{ t.step }} 步</span>
                         <span v-if="t.summary && t.status !== 'running'" class="truncate text-ink-faint">· {{ t.summary }}</span>
                       </div>
                       <p v-if="t.task" class="ml-6 mt-0.5 text-[11px] leading-4 text-ink-faint">{{ t.task }}</p>
@@ -813,7 +825,9 @@ onUnmounted(() => {
                       : 'bg-emerald-50 text-emerald-700 ring-emerald-200'"
                   >
                     <Icon :name="m.reflection.decision === 'continue' ? 'loader' : 'check'" :size="11" />
-                    {{ m.reflection.decision === 'continue' ? `第 ${m.reflection.step ?? '?'} 步后继续执行` : '证据评估完成' }}
+                    {{ m.reflection.decision === 'continue'
+                      ? `第 ${m.reflection.reasoning_round ?? m.reflection.step ?? '?'} 轮后继续执行`
+                      : '证据评估完成' }}
                     <span v-if="m.reflection.reason" class="font-normal">· {{ m.reflection.reason }}</span>
                   </span>
                 </div>
