@@ -17,7 +17,7 @@ from app.core.context import get_current_user
 from app.core.llm import get_llm
 from app.core.logging_config import get_logger
 from app.db import AsyncSessionLocal
-from app.db.models import AgentMemory, ChatMessage, ConversationSummary
+from app.db.models import AgentMemory, ChatMessage, ConversationSummary, MemoryJob
 
 log = get_logger("memory_service")
 
@@ -559,6 +559,52 @@ async def maintain_conversation_memory(
 # ===== 聊天编排用的安全包装（吞错降级语义集中在此，chat.py 只负责发事件）=====
 
 
+async def enqueue_memory_job(
+    *,
+    kind: str,
+    payload: dict[str, Any],
+    session_id: str | None = None,
+    file_id: str | None = None,
+    priority: str = "normal",
+    assistant_message_id: int | None = None,
+    user_id: str | None = None,
+) -> str:
+    """把一次记忆维护动作写入任务队列（回答路径零直接写库的唯一入口）。
+
+    kind=maintain：整轮维护（摘要+抽取），assistant_message_id 是幂等键；
+    kind=memory_op：模型/用户显式发起的单条记忆操作，payload 携带 op 参数。
+    file_id 放进 payload 随任务传递，worker 执行时不再依赖请求上下文。
+    """
+    payload = {**payload, "file_id": file_id}
+    job_id = uuid.uuid4().hex
+    async with AsyncSessionLocal() as session:
+        session.add(MemoryJob(
+            id=job_id,
+            user_id=user_id or get_current_user(),
+            session_id=session_id,
+            assistant_message_id=assistant_message_id,
+            kind=kind,
+            priority=priority,
+            status="pending",
+            max_attempts=settings.memory_job_max_attempts,
+            payload=json.dumps(payload, ensure_ascii=False),
+        ))
+        await session.commit()
+    return job_id
+
+
+async def memory_owned_by_current_user(memory_id: str) -> bool:
+    """校验记忆 id 存在且属于当前用户（模型发起 update/delete 前的同步反馈）。"""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(AgentMemory.id).where(
+                AgentMemory.id == memory_id,
+                AgentMemory.user_id == get_current_user(),
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+
 async def safe_build_context(*, session_id: str, file_id: str | None, query: str) -> dict:
     """构建记忆上下文；任何失败都降级为空上下文并记录告警（不阻断问答）。"""
     try:
@@ -566,39 +612,3 @@ async def safe_build_context(*, session_id: str, file_id: str | None, query: str
     except Exception as exc:  # noqa: BLE001
         log.warning("chat.memory_context_failed", session_id=session_id, error=str(exc)[:200])
         return {}
-
-
-async def maintain_conversation_memory_safe(
-    *,
-    session_id: str,
-    file_id: str | None,
-    user_text: str,
-    assistant_text: str,
-    assistant_message_id: int | None,
-    skip_extract: bool = False,
-) -> None:
-    """带超时与吞错的会话记忆维护；作为后台任务体运行。"""
-    try:
-        result = await asyncio.wait_for(
-            maintain_conversation_memory(
-                session_id=session_id,
-                file_id=file_id,
-                user_text=user_text,
-                assistant_text=assistant_text,
-                assistant_message_id=assistant_message_id,
-                skip_extract=skip_extract,
-            ),
-            # 内层每次 LLM 调用已有独立超时；外层需覆盖"提取+摘要"两次串行调用再加余量，
-            # 不能复用单次超时，否则稍慢一轮就整段记忆维护被取消。
-            timeout=settings.memory_task_timeout * 2 + 5,
-        )
-        log.info(
-            "chat.memory_updated",
-            session_id=session_id,
-            summary_updated=result.get("summary_updated", False),
-            memories_added=len(result.get("memories_added", [])),
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        log.warning("chat.memory_update_failed", session_id=session_id, error=str(exc)[:200])

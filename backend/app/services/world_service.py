@@ -1,8 +1,8 @@
-"""「进入小说世界」：人物名册提取、角色卡生成与角色扮演流式编排。
+"""「进入小说世界」：人物名册提取、角色卡生成与角色扮演提示词。
 
 设计要点：
 - 检索只发生在**角色卡生成时**（k=12，范围 ≤ 剧情截至章节），人物的知识边界
-  在生成这一刻固化进角色卡；对话阶段不再检索，直接以角色卡 + 时间线锚点生成。
+  在生成这一刻固化进角色卡；对话阶段由统一 Agent 图按需补充检索（可选）。
 - 缓存（novel_characters 表，按 file_id 共享）：
     roster 行     LLM 提取的主要人物名列表；
     card 行       单个人物的角色卡 JSON（persona/style/background/greeting）；
@@ -13,8 +13,7 @@
 from __future__ import annotations
 
 import json
-import random
-from typing import Any, AsyncIterator
+from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy import select
@@ -284,7 +283,12 @@ async def _get_or_make_scenario(
     return scenario
 
 
-def _roleplay_system_prompt(cards: list[dict[str, Any]], chapter_until: int | None) -> str:
+def roleplay_system_prompt(cards: list[dict[str, Any]], chapter_until: int | None) -> str:
+    """角色扮演的系统提示词：角色卡 + 时间线锚点 + 群聊规则。
+
+    供统一 Agent 图的执行环与 compose 节点使用（角色扮演已并入主图，不再有
+    独立的 stream_roleplay 旁路）。
+    """
     timeline = (
         f"故事目前进行到第 {chapter_until} 章。第 {chapter_until} 章之后的所有情节尚未发生，"
         "你（们）不知道、不能提及、也不能预知任何后续内容。"
@@ -319,59 +323,7 @@ def _roleplay_system_prompt(cards: list[dict[str, Any]], chapter_until: int | No
     )
 
 
-async def stream_roleplay(
-    file_id: str,
-    names: list[str],
-    chapter_until: int | None,
-    message: str,
-    history: list[Any],
-) -> AsyncIterator[dict[str, Any]]:
-    """角色扮演的流式编排：角色卡 + 时间线锚点 + 对话历史 → 高温流式生成。
-
-    对话阶段不检索：人物的知识边界已在角色卡生成时固化（含剧情截至章节）。
-    """
-    result = await get_character_cards(file_id, names, chapter_until)
-    cards = result["cards"]
-    # 随机打乱角色卡顺序：大模型对靠前内容有明显偏好，打乱可避免"总是同一个角色先发言"。
-    cards = list(cards)
-    random.shuffle(cards)
-    yield {"type": "meta", "data": {
-        "strategy": "roleplay",
-        "personas": [card["name"] for card in cards],
-        "chapter_until": chapter_until,
-        "output_policy": {"allow_direct_quotes": True, "summary_only": False, "show_citations": False},
-    }}
-
-    history_text = _history_lines(history)
-    system = _roleplay_system_prompt(cards, chapter_until)
-    prompt = (
-        (f"【此前对话】\n{history_text}\n\n" if history_text else "")
-        + f"访客说：{message}\n\n请以角色身份继续对话。"
-    )
-    async for chunk in get_llm(streaming=True, temperature=0.8, max_tokens=settings.agent_synthesis_max_tokens).astream([
-        SystemMessage(content=system),
-        HumanMessage(content=prompt),
-    ]):
-        content = getattr(chunk, "content", "")
-        if isinstance(content, str) and content:
-            yield {"type": "token", "data": content}
-        elif isinstance(content, list):
-            text = "".join(
-                block.get("text", "") for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
-            )
-            if text:
-                yield {"type": "token", "data": text}
-    yield {"type": "meta", "data": {
-        "strategy": "roleplay",
-        "personas": [card["name"] for card in cards],
-        "chapter_until": chapter_until,
-        "steps": 1,
-        "output_policy": {"allow_direct_quotes": True, "summary_only": False, "show_citations": False},
-    }}
-
-
-def _history_lines(history: list[Any] | None) -> str:
+def format_roleplay_history(history: list[Any] | None) -> str:
     """把对话历史拼成文本；兼容 dict（req.history）与 LangChain 消息对象两种形态。"""
     lines: list[str] = []
     for item in (history or [])[-8:]:

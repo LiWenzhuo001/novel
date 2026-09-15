@@ -1,4 +1,9 @@
-"""聊天会话管理和 Agent SSE 流式问答接口。"""
+"""聊天会话管理和 Agent SSE 流式问答接口。
+
+所有请求（普通问答与角色扮演）进入同一个 LangGraph：角色扮演通过
+interaction_mode=roleplay 走统一图（load_character_context 工具 + 专用提示词），
+不再有独立旁路。回答结束后只入队 memory_jobs，由 worker 维护长期记忆。
+"""
 import asyncio
 import json
 import time
@@ -26,19 +31,6 @@ from app.services import world_service
 log = get_logger("chat")
 router = APIRouter()
 
-# fire-and-forget 的记忆维护任务必须持引用，否则可能被 GC 提前回收（asyncio 官方警告）。
-_memory_tasks: set[asyncio.Task] = set()
-
-
-def _reap_memory_task(task: asyncio.Task) -> None:
-    """取回游离任务的异常再丢弃引用；否则任务内任何失败都不可见。"""
-    _memory_tasks.discard(task)
-    if task.cancelled():
-        return
-    exc = task.exception()
-    if exc is not None:
-        log.error("chat.memory_background_task_failed", error=f"{type(exc).__name__}: {exc}"[:300])
-
 
 def _to_lc_messages(history: List[dict]) -> List[BaseMessage]:
     """把持久化的简化消息转换为 LangChain 消息对象。"""
@@ -57,14 +49,8 @@ def _sse_event(event: str, payload) -> dict:
     return {"event": event, "data": data}
 
 
-def _tool_event(event: str, call_id: str, tool_name: str, **extra) -> dict:
-    """构造统一格式的工具过程事件。"""
-    payload = {"id": call_id, "tool": tool_name, **extra}
-    return _sse_event(event, payload)
-
-
 def _error_event(message: str, code: str = "agent_error", **extra) -> dict:
-    """构造统一格式的 Agent 错误事件。"""
+    """构造统一格式的 Agent 错误事件（稳定错误码 + 用户可读消息，不含异常原文）。"""
     return _sse_event("error", {"code": code, "message": message, **extra})
 
 
@@ -73,8 +59,9 @@ async def _persist_message(
     role: str,
     content: str,
     sources: list[dict] | None = None,
+    status: str = "completed",
 ) -> int | None:
-    """保存聊天消息和来源；持久化失败只记录日志，不阻断已生成答案。"""
+    """保存聊天消息、来源和运行终态；持久化失败只记录日志，不阻断已生成答案。"""
     try:
         async with AsyncSessionLocal() as session:
             row = ChatMessage(
@@ -82,6 +69,7 @@ async def _persist_message(
                 role=role,
                 content=content,
                 sources=json.dumps(sources or [], ensure_ascii=False),
+                status=status,
             )
             session.add(row)
             await session.commit()
@@ -174,6 +162,7 @@ async def get_messages(session_id: str):
         "role": message.role,
         "content": message.content,
         "sources": json.loads(message.sources or "[]"),
+        "status": getattr(message, "status", "completed") or "completed",
     } for message in rows]}
 
 
@@ -311,9 +300,13 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                 await session.commit()
             # A2: bounded read - rewrite only needs the last query_rewrite_history_messages rows
             # (mirrors Zep bounded-read; raw rows stay forever).
+            # partial/failed 的残缺回答不参与 Query 改写历史（completed 之外一律排除）。
             history_result = await session.execute(
                 select(ChatMessage)
-                .where(ChatMessage.session_id == session_id)
+                .where(
+                    ChatMessage.session_id == session_id,
+                    ChatMessage.status == "completed",
+                )
                 .order_by(ChatMessage.id.desc())
                 .limit(settings.query_rewrite_history_messages)
             )
@@ -333,6 +326,7 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
         reply_sources: list[dict] = []
         started = time.perf_counter()
         model_memory_ops = 0
+        completion_status = "completed"
         metrics.incr("chat_requests")
         try:
             async with asyncio.timeout(settings.agent_request_timeout):
@@ -340,10 +334,11 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                     metrics.incr("sse_cancellations")
                     log.info("chat.novel_client_disconnected", session_id=session_id)
                     return
-                if req.strategy == "roleplay":
-                    # 角色扮演不注入长期记忆：普通问答的偏好（如"只给总结"）会污染人设。
-                    req.memory_mode = "off"
                 memory_context: dict = {}
+                if req.interaction_mode == "roleplay":
+                    # 角色扮演不注入长期记忆：普通问答的偏好（如"只给总结"）会污染人设，
+                    # 记忆维护任务也不创建（人设对话不产生偏好/事实沉淀）。
+                    req.memory_mode = "off"
                 if req.memory_mode == "auto" and settings.memory_enabled:
                     memory_context = await memory_service.safe_build_context(
                         session_id=session_id,
@@ -357,147 +352,142 @@ async def _chat_stream_response(req: ChatRequest, request: Request, persist: boo
                         "output_policy": memory_context.get("output_policy", {}),
                         "count": len(memory_context.get("memories", [])),
                     })
-                fallback_reason = ""
-                if req.strategy == "roleplay":
-                    # 角色扮演：跳过 Query 改写与 RAG 图，走专属管线
-                    # （人物记忆检索 → 人设 prompt → 高温流式生成）。
-                    async for stream_event in world_service.stream_roleplay(
-                        req.file_id, req.personas or [], req.chapter_until,
-                        req.message, history_messages,
-                    ):
-                        if await request.is_disconnected():
-                            metrics.incr("sse_cancellations")
-                            log.info("chat.novel_client_disconnected", session_id=session_id)
-                            return
-                        event_type = stream_event["type"]
-                        payload = stream_event.get("data")
-                        if event_type == "token":
-                            full_reply.append(str(payload or ""))
-                            yield _sse_event("token", payload)
-                        elif event_type in {"tool_start", "tool_end", "meta"}:
-                            if event_type == "meta":
-                                fallback_reason = payload.get("fallback_reason", "")
-                                log.info(
-                                    "chat.agent_finished",
-                                    session_id=session_id,
-                                    strategy=payload.get("strategy", "roleplay"),
-                                    steps=payload.get("steps"),
-                                    personas=payload.get("personas"),
-                                )
-                            yield _sse_event(event_type, payload)
+                if req.interaction_mode == "roleplay":
+                    # 角色扮演：跳过 Query 改写（角色卡即知识边界），统一图内按需补充检索。
+                    standalone_query = req.message
+                    query_preparation: dict = {}
                 else:
-                    # Query 改写只做一次且仅在 Agent 路径需要；角色扮演上面已跳过。
                     rewrite = await rewrite_query(
                         req.message,
                         history_messages,
                         memory_context=memory_context,
                     )
+                    standalone_query = rewrite.standalone_query
+                    query_preparation = rewrite.as_dict()
+                if await request.is_disconnected():
+                    metrics.incr("sse_cancellations")
+                    log.info("chat.novel_client_disconnected", session_id=session_id)
+                    return
+
+                async for stream_event in stream_agent_question(
+                    standalone_query,
+                    req.strategy,
+                    req.file_id,
+                    req.max_steps,
+                    original_query=req.message,
+                    retrieval_query=query_preparation.get("retrieval_query") or req.message,
+                    query_preparation=query_preparation,
+                    memory_context=memory_context,
+                    session_id=session_id,
+                    memory_agent_active=(
+                        req.memory_mode == "auto"
+                        and settings.memory_enabled
+                        and settings.memory_agent_enabled
+                    ),
+                    interaction_mode=req.interaction_mode,
+                    personas=req.personas or [],
+                    chapter_until=req.chapter_until,
+                    roleplay_history=history_messages,
+                    deprecations=list(req.deprecations),
+                ):
                     if await request.is_disconnected():
                         metrics.incr("sse_cancellations")
                         log.info("chat.novel_client_disconnected", session_id=session_id)
                         return
 
-                    async for stream_event in stream_agent_question(
-                        rewrite.standalone_query,
-                        req.strategy,
-                        req.file_id,
-                        req.max_steps,
-                        original_query=req.message,
-                        retrieval_query=rewrite.retrieval_query,
-                        query_preparation=rewrite.as_dict(),
-                        memory_context=memory_context,
-                        session_id=session_id,
-                        memory_agent_active=(
-                            req.memory_mode == "auto"
-                            and settings.memory_enabled
-                            and settings.memory_agent_enabled
-                        ),
-                    ):
-                        if await request.is_disconnected():
-                            metrics.incr("sse_cancellations")
-                            log.info("chat.novel_client_disconnected", session_id=session_id)
-                            return
-
-                        event_type = stream_event["type"]
-                        payload = stream_event.get("data")
-                        if event_type == "sources":
-                            reply_sources = payload or []
-                            yield _sse_event("sources", reply_sources)
-                        elif event_type in {"route", "plan", "step_start", "observation", "reflection", "expert_tasks", "validation", "agent_decision", "thinking_start", "thinking_token", "thinking_end"}:
-                            yield _sse_event(event_type, payload)
-                        elif event_type == "tool_start":
-                            yield _sse_event("tool_start", payload)
-                        elif event_type == "tool_token":
-                            yield _sse_event("tool_token", payload)
-                        elif event_type == "tool_end":
-                            yield _sse_event("tool_end", payload)
-                        elif event_type == "token":
-                            token = str(payload or "")
-                            full_reply.append(token)
-                            yield _sse_event("token", token)
-                        elif event_type == "token_replace":
-                            # 输出护栏净化稿覆盖流式拼接的内容，持久化以净化稿为准。
-                            replaced = str(payload or "")
-                            if replaced:
-                                full_reply.clear()
-                                full_reply.append(replaced)
-                            yield _sse_event("token_replace", replaced)
-                        elif event_type == "error":
-                            yield _sse_event("error", payload)
-                        elif event_type == "meta":
-                            meta = payload or {}
-                            fallback_reason = meta.get("fallback_reason", "")
-                            model_memory_ops = len(meta.get("memory_ops") or [])
-                            log.info(
-                                "chat.agent_finished",
-                                session_id=session_id,
-                                strategy=meta.get("strategy", req.strategy or "legacy"),
-                                steps=meta.get("steps"),
-                                fallback_reason=fallback_reason,
-                            )
-                            # meta 必须转发给前端：onMeta 依赖它更新 output_policy 与
-                            # 策略/回退信息（此前只记日志不下发，前端永远收不到）。
-                            yield _sse_event("meta", meta)
+                    event_type = stream_event["type"]
+                    payload = stream_event.get("data")
+                    if event_type == "sources":
+                        reply_sources = payload or []
+                        yield _sse_event("sources", reply_sources)
+                    elif event_type in {"run_started", "route", "plan", "step_start", "observation", "reflection", "validation", "agent_decision", "thinking_start", "thinking_token", "thinking_end"}:
+                        yield _sse_event(event_type, payload)
+                    elif event_type == "tool_start":
+                        yield _sse_event("tool_start", payload)
+                    elif event_type == "tool_token":
+                        yield _sse_event("tool_token", payload)
+                    elif event_type == "tool_end":
+                        yield _sse_event("tool_end", payload)
+                    elif event_type == "token":
+                        token = str(payload or "")
+                        full_reply.append(token)
+                        yield _sse_event("token", token)
+                    elif event_type == "token_replace":
+                        # 输出护栏净化稿/修复稿覆盖流式拼接的内容，持久化以替换稿为准。
+                        replaced = str(payload or "")
+                        if replaced:
+                            full_reply.clear()
+                            full_reply.append(replaced)
+                        yield _sse_event("token_replace", replaced)
+                    elif event_type == "error":
+                        completion_status = "failed"
+                        yield _sse_event("error", payload)
+                    elif event_type == "meta":
+                        meta = payload or {}
+                        model_memory_ops = len(meta.get("memory_ops") or [])
+                        log.info(
+                            "chat.agent_finished",
+                            session_id=session_id,
+                            requested_strategy=meta.get("requested_strategy", req.strategy),
+                            effective_strategy=meta.get("effective_strategy"),
+                            interaction_mode=meta.get("interaction_mode"),
+                            steps=meta.get("steps"),
+                            grounding_status=meta.get("grounding_status"),
+                            stop_reason=meta.get("stop_reason"),
+                        )
+                        # meta 必须转发给前端：onMeta 依赖它更新 output_policy、
+                        # effective_strategy 与验证/终态信息。
+                        yield _sse_event("meta", meta)
 
                 log.info(
                     "chat.novel_answered",
                     session_id=session_id,
+                    interaction_mode=req.interaction_mode,
                     strategy=req.strategy,
                     sources=len(reply_sources),
-                    fallback_reason=fallback_reason,
+                    completion_status=completion_status,
                 )
         except TimeoutError:
             metrics.error()
-            log.warning("chat.request_timeout", session_id=session_id, domain=req.domain)
+            completion_status = "partial" if "".join(full_reply).strip() else "timeout"
+            log.warning("chat.request_timeout", session_id=session_id, domain=req.domain, status=completion_status)
             yield _error_event("本次回答超过总超时，已停止生成。", "request_timeout")
         except asyncio.CancelledError:
             metrics.incr("sse_cancellations")
             raise
         except Exception as exc:  # noqa: BLE001
             metrics.error()
-            log.error("chat.stream_failed", session_id=session_id, error=str(exc))
-            yield _error_event(f"聊天流处理失败：{exc}")
+            completion_status = "partial" if "".join(full_reply).strip() else "failed"
+            log.error("chat.stream_failed", session_id=session_id, status=completion_status, error=str(exc))
+            # 错误响应只含稳定错误码与用户消息；异常原文只进服务端日志。
+            yield _error_event("聊天流处理失败，请稍后重试。", "chat_stream_failed")
         finally:
             metrics.record_latency("chat", (time.perf_counter() - started) * 1000)
 
         reply = "".join(full_reply)
         if persist:
-            assistant_message_id = await _persist_message(session_id, "assistant", reply, reply_sources)
+            # 只有正常完成的回答保存为正常历史；超时/异常的残缺输出标记 partial
+            # 保留但不参与后续 Query 改写。
+            persist_status = completion_status if completion_status in {"completed", "partial"} else "failed"
+            assistant_message_id = await _persist_message(
+                session_id, "assistant", reply, reply_sources, status=persist_status,
+            )
             if req.memory_mode == "auto" and settings.memory_enabled and reply.strip():
-                async def update_memory_background() -> None:
-                    await memory_service.maintain_conversation_memory_safe(
-                        session_id=session_id,
-                        file_id=req.file_id,
-                        user_text=req.message,
-                        assistant_text=reply,
-                        assistant_message_id=assistant_message_id,
-                        skip_extract=model_memory_ops > 0,
-                    )
-
-                task = asyncio.create_task(update_memory_background())
-                _memory_tasks.add(task)
-                task.add_done_callback(_reap_memory_task)
-                # The actual extraction is intentionally detached; this event lets the UI
+                # 回答路径零直接写库：整轮记忆维护入队，worker 原子领取执行。
+                await memory_service.enqueue_memory_job(
+                    kind="maintain",
+                    payload={
+                        "user_text": req.message,
+                        "assistant_text": reply,
+                        "assistant_message_id": assistant_message_id,
+                        "skip_extract": model_memory_ops > 0,
+                    },
+                    session_id=session_id,
+                    file_id=req.file_id,
+                    assistant_message_id=assistant_message_id,
+                    priority="normal",
+                )
+                # The actual maintenance is intentionally detached; this event lets the UI
                 # refresh/label the memory panel without delaying the answer stream.
                 yield _sse_event("memory_updated", {"status": "scheduled"})
         yield {"event": "done", "data": ""}

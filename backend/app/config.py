@@ -168,26 +168,38 @@ class Settings:
         self.memory_ttl_sweeper_enabled = os.getenv("MEMORY_TTL_SWEEPER_ENABLED", "false").lower() == "true"
         self.memory_ttl_sweeper_interval_hours = max(1, int(os.getenv("MEMORY_TTL_SWEEPER_INTERVAL_HOURS", "24")))
         # 模型自主记忆：memory_agent 节点把记忆工具交给模型，由模型判断何时新增/更新/遗忘。
+        # 写操作不直接落库：registry 层把 add/update/delete 转为高优先级 memory_jobs。
         self.memory_agent_enabled = os.getenv("MEMORY_AGENT_ENABLED", "true").lower() == "true"
+        # ===== 记忆维护 worker（进程内后台循环，替代请求内裸后台任务）=====
+        self.memory_worker_enabled = os.getenv("MEMORY_WORKER_ENABLED", "true").lower() == "true"
+        self.memory_worker_poll_interval = max(0.5, float(os.getenv("MEMORY_WORKER_POLL_INTERVAL", "2")))
+        self.memory_job_timeout = max(10.0, float(os.getenv("MEMORY_JOB_TIMEOUT", "90")))
+        self.memory_job_max_attempts = max(1, min(5, int(os.getenv("MEMORY_JOB_MAX_ATTEMPTS", "3"))))
 
         # ===== 请求可靠性边界 =====
         self.agent_request_timeout = float(os.getenv("AGENT_REQUEST_TIMEOUT", "240"))
 
-        # ===== Agent 执行预算 =====
+        # ===== Agent 执行预算（运行时代码计数，不依赖 Prompt 声明）=====
         self.agent_max_steps = max(2, min(12, int(os.getenv("AGENT_MAX_STEPS", "6"))))
         self.agent_tool_timeout = max(1.0, float(os.getenv("AGENT_TOOL_TIMEOUT", "20")))
-        self.agent_max_experts = max(1, min(4, int(os.getenv("AGENT_MAX_EXPERTS", "4"))))
-        self.agent_multi_expert_timeout = max(5.0, float(os.getenv("AGENT_MULTI_EXPERT_TIMEOUT", "45")))
-        self.agent_expert_max_tokens = max(128, int(os.getenv("AGENT_EXPERT_MAX_TOKENS", "800")))
+        # 总工具调用与 RAG 检索调用硬上限：防止单轮爆发与重复检索滚雪球。
+        self.agent_max_tool_calls = max(2, min(24, int(os.getenv("AGENT_MAX_TOOL_CALLS", "8"))))
+        self.agent_max_retrieval_calls = max(1, min(12, int(os.getenv("AGENT_MAX_RETRIEVAL_CALLS", "4"))))
         self.agent_synthesis_max_tokens = max(256, int(os.getenv("AGENT_SYNTHESIS_MAX_TOKENS", "1200")))
-        self.agent_expert_dispatch_mode = os.getenv("AGENT_EXPERT_DISPATCH_MODE", "hybrid").lower()
-        if self.agent_expert_dispatch_mode not in {"hybrid", "template"}:
-            raise ValueError("AGENT_EXPERT_DISPATCH_MODE 仅支持 hybrid / template")
-        self.agent_dispatch_max_tokens = max(128, int(os.getenv("AGENT_DISPATCH_MAX_TOKENS", "500")))
-        self.agent_report_similarity_threshold = min(1.0, max(0.0, float(os.getenv("AGENT_REPORT_SIMILARITY_THRESHOLD", "0.72"))))
-        self.agent_expert_correction_retries = max(0, min(1, int(os.getenv("AGENT_EXPERT_CORRECTION_RETRIES", "1"))))
         self.novel_context_k = max(self.top_k, int(os.getenv("NOVEL_CONTEXT_K", "8")))
         self.novel_neighbor_window = max(0, min(3, int(os.getenv("NOVEL_NEIGHBOR_WINDOW", "1"))))
+
+        # ===== plan_execute 任务规划 =====
+        # 计划步骤 ≠ RAG 调用：一个计划可含 4~6 个工作步骤（理解/检索/比较/总结），
+        # 检索步骤数量不设额外上限，由全局 agent_max_retrieval_calls 预算硬闸；
+        # 工具步骤并发受信号量限制。
+        self.agent_plan_max_concurrency = max(1, min(4, int(os.getenv("AGENT_PLAN_MAX_CONCURRENCY", "2"))))
+
+        # ===== 最终答案验证 =====
+        # 确定性检查（[S#] 合法性、来源归属、required 引用门槛）始终执行；
+        # 语义验证（事实拆解→支持性判定）成本更高，用本开关控制，且仅 required 策略触发。
+        self.answer_verify_enabled = os.getenv("ANSWER_VERIFY_ENABLED", "true").lower() == "true"
+        self.answer_verify_max_repairs = max(0, min(1, int(os.getenv("ANSWER_VERIFY_MAX_REPAIRS", "1"))))
 
         # ===== Agent 思考流（reasoning 展示，实验能力） =====
         # 服务端 EXPOSE_RAW_REASONING 决定 reasoning 原文是否过网络；
@@ -204,7 +216,6 @@ class Settings:
         # 实测专家类长任务思考 3000-4000 字 ≈ 2800+ token：预算太小会把输出烧尽
         # 导致正文为空（由主模型补生成兜底），4096 让多数专家一次产出正文。
         self.agent_reasoning_budget = max(0, min(32768, int(os.getenv("AGENT_REASONING_BUDGET", "4096"))))
-        self.agent_expert_reasoning_enabled = os.getenv("AGENT_EXPERT_REASONING_ENABLED", "true").lower() == "true"
         self.agent_plan_reasoning_enabled = os.getenv("AGENT_PLAN_REASONING_ENABLED", "true").lower() == "true"
         # reflect 当前是规则节点无模型调用，此开关保留但本期惰性。
         self.agent_reflect_reasoning_enabled = os.getenv("AGENT_REFLECT_REASONING_ENABLED", "false").lower() == "true"

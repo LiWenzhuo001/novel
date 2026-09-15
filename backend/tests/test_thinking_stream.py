@@ -292,7 +292,7 @@ async def test_reasoning_budget_expands_max_tokens(monkeypatch):
     monkeypatch.setattr(settings, "agent_reasoning_budget", 2048, raising=False)
     reasoning_capability_cache.clear()
     calls = _patch_stream(monkeypatch, [_raw_delta(content="ok")])
-    async for _ in astream_model_turn([HumanMessage(content="q")], LLMPurpose.EXPERT, max_tokens=800):
+    async for _ in astream_model_turn([HumanMessage(content="q")], LLMPurpose.AGENT_DECISION, max_tokens=800):
         pass
     assert calls[0]["max_tokens"] == 800 + 2048
 
@@ -300,6 +300,6 @@ async def test_reasoning_budget_expands_max_tokens(monkeypatch):
 async def test_max_tokens_untouched_without_reasoning(monkeypatch):
     monkeypatch.setattr(settings, "agent_reasoning_model", "", raising=False)
     calls = _patch_stream(monkeypatch, [_raw_delta(content="ok")])
-    async for _ in astream_model_turn([HumanMessage(content="q")], LLMPurpose.EXPERT, max_tokens=800):
+    async for _ in astream_model_turn([HumanMessage(content="q")], LLMPurpose.AGENT_DECISION, max_tokens=800):
         pass
     assert calls[0]["max_tokens"] == 800

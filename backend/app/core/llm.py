@@ -83,8 +83,8 @@ def get_llm(
 
 
 def _purpose_model(purpose: LLMPurpose | None) -> str:
-    """按用途选择模型：agent/expert 类用途优先用配置的推理模型。"""
-    if purpose in {LLMPurpose.AGENT_DECISION, LLMPurpose.AGENT_PLAN, LLMPurpose.EXPERT}:
+    """按用途选择模型：agent 类用途优先用配置的推理模型。"""
+    if purpose in {LLMPurpose.AGENT_DECISION, LLMPurpose.AGENT_PLAN}:
         if settings.agent_reasoning_enabled and settings.agent_reasoning_model:
             return settings.agent_reasoning_model
     return settings.llm_model
@@ -101,10 +101,7 @@ def _purpose_thinking_enabled(purpose: LLMPurpose | None) -> bool:
     if purpose is LLMPurpose.AGENT_PLAN:
         return bool(settings.agent_reasoning_enabled and settings.agent_reasoning_model
                     and settings.agent_plan_reasoning_enabled)
-    if purpose is LLMPurpose.EXPERT:
-        return bool(settings.agent_reasoning_enabled and settings.agent_reasoning_model
-                    and settings.agent_expert_reasoning_enabled)
-    return False  # AGENT_REFLECT 本期惰性
+    return False  # AGENT_REFLECT 本期惰性；EXPERT 随专家链移除而退役
 
 
 def _infer_provider(base_url: str) -> str:

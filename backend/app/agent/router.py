@@ -31,10 +31,11 @@ _NOVEL_REFERENCE_RE = re.compile(r"第\s*[一二三四五六七八九十0-9]+章
 _ALLOWED_ANSWER_MODES = {"novel_evidence", "memory_context", "conversation"}
 _STRATEGY_ALIASES = {
     "direct": Strategy.DIRECT,
-    "multi_expert": Strategy.MULTI_EXPERT,
     "react": Strategy.REACT,
     "plan_execute": Strategy.PLAN_EXECUTE,
 }
+# 简单单跳问题的启发式：短查询且只命中至多一个小说信号 → direct（最多 1 次检索）。
+_SIMPLE_QUERY_MAX_CHARS = 16
 
 
 def _routing_metadata(
@@ -171,18 +172,42 @@ def _routing_choice(query: str, routing_hint: dict[str, Any] | None):
     )
 
 
-def normalize_strategy(requested_strategy: str | None, query: str, needs_retrieval: bool = True) -> Strategy:
-    """将用户输入归一化为受支持的执行策略；未知值保持旧的 direct 回退。
+def is_simple_single_hop(query: str) -> bool:
+    """判断是否为简单单跳问题：短查询且至多命中一个小说信号。"""
+    text = query.strip()
+    if not text or len(text) > _SIMPLE_QUERY_MAX_CHARS:
+        return False
+    return sum(1 for signal in _NOVEL_SIGNALS if signal in text) <= 1
 
-    auto 即混合路由：复杂小说分析（多信号/长问题且确需检索）走 multi_expert
-    固定流水线，其余一律进入自主 react——react 是普通问答的本体架构。
+
+def normalize_strategy(
+    requested_strategy: str | None,
+    query: str,
+    needs_retrieval: bool = True,
+    interaction_mode: str = "qa",
+) -> Strategy:
+    """将用户输入归一化为受支持的三种执行策略之一。
+
+    auto 路由规则：
+    - 纯会话/输出偏好（不需要检索）→ direct；
+    - 简单单跳事实（短查询、单一信号）→ direct（允许 1 次检索）；
+    - 多实体、跨章节、时间线、因果等复杂任务 → plan_execute；
+    - 其余普通小说问题 → react（默认档）。
+    低置信度不升级到最贵路径：required 兜底策略由检索政策决定，与策略解耦。
     """
     value = (requested_strategy or "auto").strip().lower()
-    if value == "auto":
-        if needs_retrieval and is_complex_query(query):
-            return Strategy.MULTI_EXPERT
+    if value != "auto":
+        return _STRATEGY_ALIASES.get(value, Strategy.DIRECT)
+    if interaction_mode == "roleplay":
+        # 角色扮演是交互模式不是策略：统一进 react 环，工具差异由路由决定。
         return Strategy.REACT
-    return _STRATEGY_ALIASES.get(value, Strategy.DIRECT)
+    if not needs_retrieval:
+        return Strategy.DIRECT
+    if is_complex_query(query):
+        return Strategy.PLAN_EXECUTE
+    if is_simple_single_hop(query):
+        return Strategy.DIRECT
+    return Strategy.REACT
 
 
 def _decision_metadata(
@@ -206,9 +231,38 @@ def _decision_metadata(
     }
 
 
-def route_query(query: str, requested_strategy: str | None = None, routing_hint: dict[str, Any] | None = None) -> RouteDecision:
+def route_query(
+    query: str,
+    requested_strategy: str | None = None,
+    routing_hint: dict[str, Any] | None = None,
+    interaction_mode: str = "qa",
+) -> RouteDecision:
     needs_retrieval, policy, reason, answer_mode, output_policy, preference_update, routing = _routing_choice(query, routing_hint)
-    strategy = normalize_strategy(requested_strategy, query, needs_retrieval)
+    if interaction_mode == "roleplay":
+        # 角色扮演：角色上下文工具 required（load_character_context 必须先执行），
+        # 小说检索 optional；不做 LLM 检索判定，时间边界由角色卡与校验节点保证。
+        return RouteDecision(
+            "roleplay_dialogue",
+            Strategy.REACT,
+            ("load_character_context", "retrieve_novel", "get_chapter_context"),
+            3,
+            requires_citation=False,
+            needs_retrieval=False,
+            retrieval_policy="optional",
+            retrieval_reason="roleplay_dialogue",
+            answer_mode="roleplay",
+            output_policy=merge_output_policy({
+                "allow_direct_quotes": True,
+                "summary_only": False,
+                "show_citations": False,
+                "show_agent_details": False,
+            }),
+            llm_needs_retrieval=None,
+            routing_override=False,
+            routing_override_reason="",
+            routing_confidence=None,
+        )
+    strategy = normalize_strategy(requested_strategy, query, needs_retrieval, interaction_mode)
     kwargs = _decision_metadata(
         needs_retrieval=needs_retrieval,
         reason=reason,
@@ -218,24 +272,9 @@ def route_query(query: str, requested_strategy: str | None = None, routing_hint:
         routing={**routing, "retrieval_policy": policy},
     )
     if strategy is Strategy.DIRECT:
-        # direct = 短路径档：允许一次自主 RAG 决策，预算收紧到 2 步。
+        # direct = 短路径档：最多 1 次工具调用（max_steps=1），工具失败不重试。
         intent = "fact_lookup" if needs_retrieval else "conversation"
-        return RouteDecision(intent, strategy, ("retrieve_novel", "get_chapter_context", "calculator"), 2, **kwargs)
-    if strategy is Strategy.MULTI_EXPERT:
-        if not needs_retrieval:
-            return RouteDecision(
-                "conversation",
-                Strategy.DIRECT,
-                ("retrieve_novel", "get_chapter_context", "calculator"),
-                2,
-                **{
-                    **kwargs,
-                    "requires_citation": False,
-                    "needs_retrieval": False,
-                    "retrieval_reason": f"{reason};strategy_downgraded",
-                },
-            )
-        return RouteDecision("novel_analysis", strategy, ("retrieve_novel", "get_chapter_context"), max(3, settings.agent_max_steps), **kwargs)
+        return RouteDecision(intent, strategy, ("retrieve_novel", "get_chapter_context", "calculator"), 1, **kwargs)
     max_steps = max(3, settings.agent_max_steps) + (1 if strategy is Strategy.PLAN_EXECUTE else 0)
     intent = "tool_augmented_question" if strategy is Strategy.REACT else "multi_step_novel_question"
     return RouteDecision(intent, strategy, ("retrieve_novel", "get_chapter_context", "calculator"), max_steps, **kwargs)

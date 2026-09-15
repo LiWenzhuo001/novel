@@ -1,4 +1,8 @@
-"""Agent 工具注册、权限控制、超时处理和小说检索工具。"""
+"""Agent 工具注册、权限控制、超时处理和小说检索工具。
+
+写类工具（记忆增删改）不在回答路径直接落库：registry 层将其转为高优先级
+memory_jobs 任务，由独立 worker 消费——回答过程与数据写入解耦。
+"""
 from __future__ import annotations
 
 import ast
@@ -6,7 +10,7 @@ import asyncio
 import json
 import operator
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from langchain_core.tools import tool
@@ -16,7 +20,7 @@ from app.config import settings
 from app.core.context import get_memory_session
 from app.core.logging_config import get_logger
 from app.core.rag import retrieve_novel_context
-from app.services import memory_service
+from app.services import memory_service, world_service
 
 log = get_logger("agent_tools")
 
@@ -25,12 +29,16 @@ ToolHandler = Callable[..., Awaitable[ToolResult]]
 
 @dataclass(frozen=True)
 class ToolSpec:
-    """工具的静态描述，包括超时、权限和幂等性信息。"""
+    """工具的静态描述：超时、权限、幂等、重试语义、成本档与适用交互模式。"""
     name: str
     description: str
     timeout_seconds: float = 20.0
     permission: str = "read"
     idempotent: bool = True
+    # 失败是否允许执行环重试一次（denied 永不重试）。
+    retryable: bool = False
+    cost_class: str = "low"  # low | medium | high
+    supported_modes: frozenset = field(default_factory=lambda: frozenset({"qa", "roleplay"}))
 
 
 class ToolRegistry:
@@ -46,6 +54,16 @@ class ToolRegistry:
 
     def specs(self) -> list[ToolSpec]:
         return list(self._specs.values())
+
+    def spec(self, name: str) -> ToolSpec | None:
+        return self._specs.get(name)
+
+    def tools_for_mode(self, interaction_mode: str) -> list[str]:
+        """返回对指定交互模式可见的工具名（supported_modes 硬过滤）。"""
+        return [
+            name for name, spec in self._specs.items()
+            if interaction_mode in spec.supported_modes
+        ]
 
     async def execute(self, name: str, *, allowed_tools: list[str] | tuple[str, ...], **kwargs: Any) -> ToolResult:
         """执行指定工具，并将拒绝、超时和异常统一转换为 ToolResult。"""
@@ -180,11 +198,45 @@ async def _calculator(*, expression: str, **_: Any) -> ToolResult:
 def build_default_registry() -> ToolRegistry:
     """创建并注册当前 Agent Runtime 可用的默认工具集合。"""
     registry = ToolRegistry()
-    registry.register(ToolSpec("retrieve_novel", "混合检索小说原文并返回引用", timeout_seconds=settings.agent_tool_timeout), _retrieve_novel)
-    registry.register(ToolSpec("get_chapter_context", "检索命中章节的相邻片段", timeout_seconds=settings.agent_tool_timeout), _chapter_context)
-    registry.register(ToolSpec("calculator", "执行受限数值计算", timeout_seconds=settings.agent_tool_timeout), _calculator)
+    registry.register(ToolSpec(
+        "retrieve_novel", "混合检索小说原文并返回引用",
+        timeout_seconds=settings.agent_tool_timeout, retryable=True, cost_class="medium",
+    ), _retrieve_novel)
+    registry.register(ToolSpec(
+        "get_chapter_context", "检索命中章节的相邻片段",
+        timeout_seconds=settings.agent_tool_timeout, retryable=True, cost_class="medium",
+    ), _chapter_context)
+    registry.register(ToolSpec(
+        "calculator", "执行受限数值计算", timeout_seconds=settings.agent_tool_timeout, cost_class="low",
+    ), _calculator)
+    registry.register(ToolSpec(
+        "load_character_context", "装载登场角色卡与开场情景",
+        timeout_seconds=_CHARACTER_CONTEXT_TIMEOUT, retryable=True, cost_class="high",
+        supported_modes=frozenset({"roleplay"}),
+    ), _load_character_context_impl)
     _register_memory_tools(registry)
     return registry
+
+
+# ===== 角色扮演工具（interaction_mode=roleplay 专用；personas/chapter_until 由受信任状态注入） =====
+
+# 角色卡生成包含检索 + 多次 LLM 调用，普通工具超时不够；命中缓存时通常毫秒级。
+_CHARACTER_CONTEXT_TIMEOUT = 90.0
+
+
+async def _load_character_context_impl(
+    *, file_id: str | None = None, personas: list[str] | None = None,
+    chapter_until: int | None = None, **_: Any,
+) -> ToolResult:
+    """装载角色卡与开场情景；模型不提供任何参数，全部由执行器从状态注入。"""
+    if not file_id or not personas:
+        return ToolResult(status="error", error_code="missing_roleplay_context",
+                          output="（缺少角色扮演上下文：personas 或 file_id 未注入）")
+    result = await world_service.get_character_cards(file_id, personas, chapter_until)
+    return ToolResult(
+        status="ok",
+        output={"cards": result["cards"], "scenario": result["scenario"], "chapter_until": chapter_until},
+    )
 
 
 # ===== 记忆工具（模型自主发起，memory_agent 节点执行） =====
@@ -214,29 +266,56 @@ async def _add_memory_impl(content: str, memory_type: str = "session_fact", impo
     if memory_type not in {"user_preference", "novel_fact", "session_fact"}:
         return ToolResult(status="error", error_code="invalid_memory_type",
                           output=f"（无效的 memory_type：{memory_type}）")
-    row = await memory_service.save_memory(
-        content, memory_type,
-        session_id=session_id if memory_type == "session_fact" else None,
-        file_id=file_id if memory_type == "novel_fact" else None,
-        importance=importance,
+    # 回答路径零直接写库：入队高优先级任务，由 worker 校验并执行。
+    job_id = await memory_service.enqueue_memory_job(
+        kind="memory_op",
+        payload={"op": "add", "content": content, "memory_type": memory_type, "importance": importance},
+        session_id=session_id,
+        file_id=file_id,
+        priority="high",
     )
-    return ToolResult(status="ok", output={"message": f"已保存记忆：{content}", "memory_id": row.id})
+    return ToolResult(status="ok", output={
+        "message": f"已提交记忆写入（后台生效）：{content}", "job_id": job_id, "deferred": True,
+    })
 
 
 async def _update_memory_impl(memory_id: str, content: str, **_: Any) -> ToolResult:
-    row = await memory_service.update_memory(memory_id, content=content)
-    if row is None:
+    ctx = get_memory_session()
+    if ctx is None:
+        return ToolResult(status="error", error_code="no_session_context", output="（会话上下文不可用，无法更新记忆）")
+    session_id, file_id = ctx
+    # 同步做归属校验，让模型立刻拿到"记忆不存在"的反馈，而不是等 worker 失败。
+    if not await memory_service.memory_owned_by_current_user(memory_id):
         return ToolResult(status="error", error_code="memory_not_found",
                           output=f"（未找到 id={memory_id} 的记忆，或该记忆不属于当前用户）")
-    return ToolResult(status="ok", output={"message": f"已更新记忆：{content}", "memory_id": memory_id})
+    job_id = await memory_service.enqueue_memory_job(
+        kind="memory_op",
+        payload={"op": "update", "id": memory_id, "content": content},
+        session_id=session_id,
+        file_id=file_id,
+        priority="high",
+    )
+    return ToolResult(status="ok", output={
+        "message": f"已提交记忆更新（后台生效）：{content}", "job_id": job_id, "deferred": True,
+    })
 
 
 async def _delete_memory_impl(memory_id: str, **_: Any) -> ToolResult:
-    deleted = await memory_service.delete_memory(memory_id)
-    if not deleted:
+    ctx = get_memory_session()
+    if ctx is None:
+        return ToolResult(status="error", error_code="no_session_context", output="（会话上下文不可用，无法删除记忆）")
+    session_id, file_id = ctx
+    if not await memory_service.memory_owned_by_current_user(memory_id):
         return ToolResult(status="error", error_code="memory_not_found",
                           output=f"（未找到 id={memory_id} 的记忆，或该记忆不属于当前用户）")
-    return ToolResult(status="ok", output={"message": f"已删除记忆：{memory_id}"})
+    job_id = await memory_service.enqueue_memory_job(
+        kind="memory_op",
+        payload={"op": "delete", "id": memory_id},
+        session_id=session_id,
+        file_id=file_id,
+        priority="high",
+    )
+    return ToolResult(status="ok", output={"message": f"已提交记忆删除（后台生效）：{memory_id}", "job_id": job_id, "deferred": True})
 
 
 @tool
@@ -269,10 +348,23 @@ MEMORY_AGENT_TOOLS = ("search_memories", "add_memory", "update_memory", "delete_
 
 
 def _register_memory_tools(registry: ToolRegistry) -> None:
-    registry.register(ToolSpec("search_memories", "检索当前用户的长期记忆", timeout_seconds=settings.memory_task_timeout), _search_memories_impl)
-    registry.register(ToolSpec("add_memory", "保存一条长期记忆", timeout_seconds=settings.memory_task_timeout), _add_memory_impl)
-    registry.register(ToolSpec("update_memory", "更新一条长期记忆", timeout_seconds=settings.memory_task_timeout), _update_memory_impl)
-    registry.register(ToolSpec("delete_memory", "删除一条长期记忆", timeout_seconds=settings.memory_task_timeout), _delete_memory_impl)
+    memory_modes = frozenset({"qa"})
+    registry.register(ToolSpec(
+        "search_memories", "检索当前用户的长期记忆",
+        timeout_seconds=settings.memory_task_timeout, cost_class="low", supported_modes=memory_modes,
+    ), _search_memories_impl)
+    registry.register(ToolSpec(
+        "add_memory", "保存一条长期记忆",
+        timeout_seconds=settings.memory_task_timeout, cost_class="low", supported_modes=memory_modes,
+    ), _add_memory_impl)
+    registry.register(ToolSpec(
+        "update_memory", "更新一条长期记忆",
+        timeout_seconds=settings.memory_task_timeout, cost_class="low", supported_modes=memory_modes,
+    ), _update_memory_impl)
+    registry.register(ToolSpec(
+        "delete_memory", "删除一条长期记忆",
+        timeout_seconds=settings.memory_task_timeout, cost_class="low", supported_modes=memory_modes,
+    ), _delete_memory_impl)
 
 
 # ===== ReAct 执行环的模型侧工具（bind_tools 用；执行仍走 registry 以复用超时/白名单） =====
@@ -317,12 +409,31 @@ async def react_calculator(expression: str) -> str:
     return _react_payload(await _calculator(expression=expression))
 
 
-REACT_TOOL_SPECS = (react_retrieve_novel, react_chapter_context, react_calculator)
+@tool("load_character_context")
+async def react_load_character_context() -> str:
+    """加载当前场景的登场角色卡与开场情景（人物知识边界已在卡内固化）。角色扮演对话开始时调用一次。"""
+    return _react_payload(await _load_character_context_impl())
+
+
+# 模型侧工具描述按名字索引；执行环据此把 allowed_tools 翻译为 bind_tools 清单。
+MODEL_TOOL_SPECS = {
+    "retrieve_novel": react_retrieve_novel,
+    "get_chapter_context": react_chapter_context,
+    "calculator": react_calculator,
+    "load_character_context": react_load_character_context,
+}
+REACT_TOOL_SPECS = (react_retrieve_novel, react_chapter_context, react_calculator)  # 兼容旧引用
 REACT_TOOL_LABELS = {
     "retrieve_novel": "补充检索",
     "get_chapter_context": "章节上下文",
     "calculator": "数值计算",
+    "load_character_context": "装载角色卡",
 }
+
+
+def model_tool_specs(allowed_tools: list[str] | tuple[str, ...]) -> list[Any]:
+    """按白名单返回 bind_tools 用的模型侧工具清单（保持声明顺序）。"""
+    return [spec for name, spec in MODEL_TOOL_SPECS.items() if name in allowed_tools]
 
 
 registry = build_default_registry()

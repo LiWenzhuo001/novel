@@ -17,6 +17,7 @@ from app.core.context import reset_current_user
 from app.db import AsyncSessionLocal
 from app.db.models import AgentMemory
 from app.db.models import ChatMessage
+from app.db.models import MemoryJob
 from app.db.models import ChatSession
 from app.db.models import ConversationSummary
 from app.services import memory_service
@@ -322,12 +323,14 @@ def test_extract_rejects_unknown_ids(memory_user, monkeypatch):
     run(scenario())
 
 
-def test_safe_wrapper_forwards_skip_extract(memory_user, monkeypatch):
-    """回归：chat.py 调 _safe 时传 skip_extract，包裹层必须接受并转发给内层。
+def test_worker_run_job_forwards_skip_extract(memory_user, monkeypatch):
+    """worker 的 maintain 执行体必须把 payload 里的 skip_extract 转发给内层。
 
-    曾经 _safe 不接受该参数，游离任务每轮抛 TypeError 且无人取回，
-    记忆提取与摘要在生产路径整体失效，而测试只覆盖内层函数未能发现。
+    回归：曾因 _safe 包装层不收该参数，游离任务每轮抛 TypeError 且无人取回，
+    记忆提取与摘要在生产路径整体失效。
     """
+    from app.services import memory_worker
+
     calls: list[dict] = []
 
     async def spy(**kwargs):
@@ -335,33 +338,70 @@ def test_safe_wrapper_forwards_skip_extract(memory_user, monkeypatch):
         return {"summary_updated": False, "memories_added": []}
 
     monkeypatch.setattr(memory_service, "maintain_conversation_memory", spy)
+    job = MemoryJob(
+        id=uuid.uuid4().hex, user_id=memory_user, session_id=None,
+        kind="maintain", attempts=1, max_attempts=3,
+        payload=json.dumps({"user_text": "hi", "assistant_text": "ok", "skip_extract": True}),
+    )
 
     async def scenario():
-        await memory_service.maintain_conversation_memory_safe(
-            session_id="sess_x", file_id=None,
-            user_text="hi", assistant_text="ok",
-            assistant_message_id=None, skip_extract=True,
-        )
+        await memory_worker._run_job(job)
         assert len(calls) == 1
         assert calls[0]["skip_extract"] is True
 
     run(scenario())
 
 
-def test_safe_wrapper_swallows_inner_failure(memory_user, monkeypatch):
-    """内层异常只记日志不外抛——游离任务里外抛等于无声丢失。"""
-    async def boom(**kwargs):
+def test_worker_run_job_swallows_failure_and_marks_job(memory_user, monkeypatch):
+    """任务内异常不外抛（worker 循环必须存活），且按重试额度回写 pending/failed。"""
+    from app.services import memory_worker
+
+    async def boom(*args, **kwargs):
         raise RuntimeError("inner failure")
 
-    monkeypatch.setattr(memory_service, "maintain_conversation_memory", boom)
+    # 两个执行体都打桩：无论领到 maintain 还是残留的 memory_op 都走失败路径。
+    monkeypatch.setattr(memory_worker, "_execute_maintain", boom)
+    monkeypatch.setattr(memory_worker, "_execute_memory_op", boom)
 
     async def scenario():
-        # 不抛即为通过；异常被吞并落 log.warning。
-        await memory_service.maintain_conversation_memory_safe(
-            session_id="sess_x", file_id=None,
-            user_text="hi", assistant_text="ok",
+        job_id = await memory_service.enqueue_memory_job(
+            kind="maintain", payload={"user_text": "hi", "assistant_text": "ok"},
+            session_id=None, file_id=None, priority="normal", assistant_message_id=None,
+        )
+        # 队列里可能有其他用例残留的任务：领取到的对象自带真实主键，
+        # 收尾断言按其自身 id 回查，不依赖 job_id 与队列状态一一对应。
+        job = await memory_worker._claim_due_job()
+        assert job is not None
+        # 不抛即为通过：异常被吞并落 log.warning，任务回 pending 等待重试。
+        await memory_worker._run_job(job)
+        async with AsyncSessionLocal() as session:
+            row = (await session.execute(
+                select(MemoryJob).where(MemoryJob.id == job.id)
+            )).scalars().first()
+        assert row is not None
+        assert row.status == "pending" and row.attempts >= 1
+
+    run(scenario())
+
+
+def test_worker_claim_is_priority_ordered_and_atomic(memory_user):
+    """高优先级 memory_op 先于 normal maintain 被领取；领取后状态为 running。"""
+    from app.services import memory_worker
+
+    async def scenario():
+        await memory_service.enqueue_memory_job(
+            kind="maintain", payload={"user_text": "a", "assistant_text": "b"},
+            session_id=None, file_id=None, priority="normal",
             assistant_message_id=None,
         )
+        await memory_service.enqueue_memory_job(
+            kind="memory_op", payload={"op": "add", "content": "偏好", "memory_type": "user_preference"},
+            session_id=None, file_id=None, priority="high",
+        )
+        # 队列残留（若有）都是 normal 优先级的历史任务；本轮 high 任务必须先被领取。
+        first = await memory_worker._claim_due_job()
+        assert first is not None and first.kind == "memory_op"
+        assert first.status == "running" and first.lease_id
 
     run(scenario())
 

@@ -133,6 +133,11 @@ def _event_types(events) -> list[str]:
     return [name for name, _data in events]
 
 
+def _json_loads(data: str):
+    import json
+    return json.loads(data)
+
+
 class _Doc:
     """轻量 Document 替身：只带 metadata 与 page_content。"""
 
@@ -359,59 +364,92 @@ def test_character_rejected_when_no_fragments(monkeypatch):
         reset_current_user(token)
 
 
-def test_roleplay_stream_has_no_retrieval_step(client, auth_headers, chat_env, monkeypatch):
-    """对话阶段零检索：不再下发 tool_start/tool_end 事件。"""
-    from app.api import chat as chat_module
+_ROLEPLAY_CARDS = {
+    "cards": [{
+        "name": "宝玉", "persona": "温润多情的公子",
+        "style": "口齿伶俐，称人妹妹", "background": "大观园中与众姊妹起居", "greeting": "妹妹来了",
+    }],
+    "scenario": "你走进怡红院，宝玉正等着你。",
+}
 
-    async def fake_stream(file_id, personas, chapter_until, message, history):
-        assert isinstance(history, list)
-        yield {"type": "token", "data": "嗯。"}
-        yield {"type": "meta", "data": {"strategy": "roleplay", "personas": personas, "steps": 1}}
 
-    monkeypatch.setattr(chat_module.world_service, "stream_roleplay", fake_stream)
+def _mock_roleplay_graph(monkeypatch):
+    """把统一图的角色扮演链路打到假实现：角色卡免 LLM，模型两轮后直接给出角色回复。
+
+    轮 1：模型调用 load_character_context（真实 registry 通道 → 假角色卡）；
+    轮 2：模型不再调用工具，最终内容即候选答案（单一生成语义）。
+    """
+    import json as _json
+
+    from app.agent import runtime as runtime_module
+    from app.core.llm import ModelTurnDelta
+    from app.services import world_service as world_module
+
+    async def fake_cards(file_id, names, chapter_until):
+        assert isinstance(names, list) and 1 <= len(names) <= 3
+        return {**_ROLEPLAY_CARDS, "cards": [
+            {**card, "name": names[0]} for card in _ROLEPLAY_CARDS["cards"]
+        ]}
+
+    monkeypatch.setattr(world_module, "get_character_cards", fake_cards)
+
+    rounds = {"n": 0}
+
+    async def fake_stream(messages, purpose, *, tools=None, max_tokens=None):
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            yield ModelTurnDelta(kind="tool_call", tool_call_chunk={
+                "index": 0, "id": "rp1", "name": "load_character_context", "args_str": "{}",
+            })
+        else:
+            yield ModelTurnDelta(kind="content", text="**宝玉**：妹妹今日气色不错。")
+
+    monkeypatch.setattr(runtime_module, "astream_model_turn", fake_stream)
+    return rounds
+
+
+def test_roleplay_runs_in_unified_graph(client, auth_headers, chat_env, monkeypatch):
+    """角色扮演并入统一图：interaction_mode=roleplay 走同一 SSE 协议，角色回复即答案。"""
+    _mock_roleplay_graph(monkeypatch)
     response = client.post("/api/chat", json={
         "message": "你好",
-        "strategy": "roleplay",
+        "interaction_mode": "roleplay",
+        "strategy": "auto",
         "memory_mode": "off",
         "file_id": chat_env["file_id"],
         "personas": ["宝玉"],
     }, headers=auth_headers)
     assert response.status_code == 200
-    types = _event_types(_parse_sse_events(response.text))
-    assert "token" in types
-    assert "tool_start" not in types and "tool_end" not in types
+    events = _parse_sse_events(response.text)
+    types = _event_types(events)
+    # 统一协议：run_started/route/meta/done 都在，角色回复以 token 下发
+    for expected in ("session", "run_started", "route", "token", "meta", "done"):
+        assert expected in types, f"缺少 {expected} 事件，实际：{types}"
+    token_text = "".join(data for name, data in events if name == "token")
+    assert "宝玉" in token_text
+    meta = _json_loads(next(data for name, data in events if name == "meta"))
+    assert meta["interaction_mode"] == "roleplay"
+    assert meta["effective_strategy"] == "react"
+    assert meta["answer_mode"] == "roleplay"
+    assert meta["personas"] == ["宝玉"]
 
 
-def test_roleplay_stream_and_session_persistence(client, auth_headers, chat_env, monkeypatch):
-    """roleplay 请求走专属管线，会话持久化 personas 与 chapter_until。"""
-    from app.api import chat as chat_module
-
-    async def fake_stream(file_id, personas, chapter_until, message, history):
-        assert personas == ["林黛玉"]
-        assert chapter_until == 12
-        yield {"type": "tool_start", "data": {"id": "rp_retrieve", "tool": "retrieve_novel", "label": "人物记忆检索"}}
-        for chunk in ["**林黛玉**：", "你来了。"]:
-            yield {"type": "token", "data": chunk}
-        yield {"type": "meta", "data": {"strategy": "roleplay", "personas": personas, "chapter_until": chapter_until, "steps": 2}}
-
-    monkeypatch.setattr(chat_module.world_service, "stream_roleplay", fake_stream)
-
+def test_roleplay_session_persistence_and_chapter_boundary(client, auth_headers, chat_env, monkeypatch):
+    """roleplay 请求会话持久化 personas 与 chapter_until；meta 携带时间边界。"""
+    _mock_roleplay_graph(monkeypatch)
     response = client.post("/api/chat", json={
         "message": "你好",
-        "strategy": "roleplay",
+        "interaction_mode": "roleplay",
         "memory_mode": "off",
         "file_id": chat_env["file_id"],
         "personas": ["林黛玉"],
         "chapter_until": 12,
     }, headers=auth_headers)
     assert response.status_code == 200
-
     events = _parse_sse_events(response.text)
-    types = _event_types(events)
-    for expected in ("session", "tool_start", "token", "meta", "done"):
-        assert expected in types, f"缺少 {expected} 事件，实际：{types}"
-    token_text = "".join(data for name, data in events if name == "token")
-    assert "林黛玉" in token_text
+    meta = _json_loads(next(data for name, data in events if name == "meta"))
+    assert meta["chapter_until"] == 12
+    assert meta["personas"] == ["林黛玉"]
 
     session_id = next(data for name, data in events if name == "session")
     rows = client.get("/api/chat/sessions", headers=auth_headers).json()["data"]
@@ -420,13 +458,42 @@ def test_roleplay_stream_and_session_persistence(client, auth_headers, chat_env,
     assert row["chapter_until"] == 12
 
 
-def test_roleplay_rejects_more_than_three(client, auth_headers, chat_env):
+def test_roleplay_legacy_strategy_value_maps_to_interaction_mode(client, auth_headers, chat_env, monkeypatch):
+    """过渡兼容：strategy=roleplay 自动映射为 interaction_mode=roleplay，并在 meta.deprecations 提示。"""
+    _mock_roleplay_graph(monkeypatch)
     response = client.post("/api/chat", json={
         "message": "你好",
         "strategy": "roleplay",
         "memory_mode": "off",
         "file_id": chat_env["file_id"],
+        "personas": ["宝玉"],
+    }, headers=auth_headers)
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+    meta = _json_loads(next(data for name, data in events if name == "meta"))
+    assert meta["interaction_mode"] == "roleplay"
+    assert any("roleplay" in d for d in meta.get("deprecations", []))
+
+
+def test_roleplay_rejects_more_than_three(client, auth_headers, chat_env):
+    response = client.post("/api/chat", json={
+        "message": "你好",
+        "interaction_mode": "roleplay",
+        "memory_mode": "off",
+        "file_id": chat_env["file_id"],
         "personas": ["甲", "乙", "丙", "丁"],
+    }, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_roleplay_qa_mode_rejects_personas(client, auth_headers, chat_env):
+    """qa 模式带 personas 直接 422：交互模式与人物集合互斥。"""
+    response = client.post("/api/chat", json={
+        "message": "你好",
+        "strategy": "auto",
+        "memory_mode": "off",
+        "file_id": chat_env["file_id"],
+        "personas": ["宝玉"],
     }, headers=auth_headers)
     assert response.status_code == 422
 
@@ -435,34 +502,23 @@ def test_history_lines_accepts_dicts_and_lc_messages():
     """第二轮对话的历史是 LangChain 消息对象，第一轮是 dict——两种都要能拼。"""
     from langchain_core.messages import AIMessage, HumanMessage
 
-    from app.services.world_service import _history_lines
+    from app.services.world_service import format_roleplay_history
 
-    dict_form = _history_lines([
+    dict_form = format_roleplay_history([
         {"role": "user", "content": "你好"},
         {"role": "assistant", "content": "来了"},
     ])
-    lc_form = _history_lines([HumanMessage(content="你好"), AIMessage(content="来了")])
+    lc_form = format_roleplay_history([HumanMessage(content="你好"), AIMessage(content="来了")])
     assert dict_form == lc_form
     assert "访客：你好" in dict_form and "角色：来了" in dict_form
 
 
 def test_roleplay_accepts_lc_message_history(client, auth_headers, chat_env, monkeypatch):
-    """第二轮带 LangChain 消息对象历史时管线不再报 'no attribute get'。"""
-    from langchain_core.messages import HumanMessage
-
-    from app.api import chat as chat_module
-
-    async def fake_stream(file_id, personas, chapter_until, message, history):
-        # 生产形态：history 为 _to_lc_messages 的产物（首轮可能为空），
-        # 兼容性本身由 test_history_lines_accepts_dicts_and_lc_messages 锁定。
-        assert isinstance(history, list)
-        yield {"type": "token", "data": "好"}
-        yield {"type": "meta", "data": {"strategy": "roleplay", "personas": personas, "steps": 2}}
-
-    monkeypatch.setattr(chat_module.world_service, "stream_roleplay", fake_stream)
+    """第二轮带 LangChain 消息对象历史时统一图正常作答（历史经 roleplay_history 注入）。"""
+    _mock_roleplay_graph(monkeypatch)
     response = client.post("/api/chat", json={
         "message": "心情怎么样",
-        "strategy": "roleplay",
+        "interaction_mode": "roleplay",
         "memory_mode": "off",
         "file_id": chat_env["file_id"],
         "personas": ["宝玉"],

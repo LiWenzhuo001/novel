@@ -5,7 +5,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Computed, DateTime, ForeignKey, Integer, String, Text, Float
+from sqlalchemy import Boolean, Column, Computed, DateTime, ForeignKey, Integer, String, Text, Float, text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from pgvector.sqlalchemy import Vector
 
@@ -108,7 +108,7 @@ class KnowledgeFile(Base):
     chapter_detection_model = Column(String(255))
     chapter_detection_prompt_version = Column(String(64))
     chapter_detection_error = Column(Text)
-    chapter_detection_requested = Column(Boolean, default=False)
+    chapter_detection_requested = Column(Boolean, nullable=False, server_default=text("false"), default=False)
 
 
 class ChatSession(Base):
@@ -151,7 +151,12 @@ class NovelCharacter(Base):
 
 
 class ChatMessage(Base):
-    """会话中的单条消息（user / assistant）。sources 以 JSON 字符串存储。"""
+    """会话中的单条消息（user / assistant）。sources 以 JSON 字符串存储。
+
+    status 为运行终态：completed=正常完成且通过验证；partial=超时/异常后的
+    残缺输出（保留但后续 Query 改写默认忽略）；failed=错误无有效内容；
+    cancelled=客户端断开（不落库，列保留以兼容状态查询）。
+    """
 
     __tablename__ = "chat_messages"
 
@@ -164,7 +169,35 @@ class ChatMessage(Base):
     role = Column(String(16), nullable=False)
     content = Column(Text, default="")
     sources = Column(Text, default="[]")
+    status = Column(String(16), nullable=False, server_default=text("'completed'"), default="completed")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MemoryJob(Base):
+    """记忆维护任务表：回答路径零直接写库，维护动作全部经任务队列由 worker 执行。
+
+    kind: maintain=整轮维护（摘要+抽取）；memory_op=模型发起的单条记忆操作（高优先级）。
+    priority: normal=聊天后维护；high=模型/用户显式记忆操作，worker 先消费。
+    assistant_message_id 是 maintain 类任务的幂等键（部分唯一索引）。
+    """
+
+    __tablename__ = "memory_jobs"
+
+    id = Column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    user_id = Column(String(64), index=True, nullable=False)
+    session_id = Column(String(32), ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True)
+    assistant_message_id = Column(Integer, index=True)
+    kind = Column(String(16), nullable=False, default="maintain")  # maintain | memory_op
+    priority = Column(String(8), nullable=False, default="normal")  # normal | high
+    status = Column(String(16), nullable=False, default="pending", index=True)  # pending|running|completed|failed|cancelled
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    lease_id = Column(String(64))
+    lease_until = Column(DateTime)
+    payload = Column(Text, nullable=False, default="{}")  # JSON 任务参数
+    error_code = Column(String(64))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ConversationSummary(Base):

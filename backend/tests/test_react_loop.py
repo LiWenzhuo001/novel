@@ -38,7 +38,14 @@ async def test_execute_budget_guard_short_circuits():
     assert result["fallback_reason"] == "step_budget_exceeded"
 
 
-def test_parse_plan_text_caps_five_steps():
-    steps = runtime._parse_plan_text("\n".join(f"第{i}步：做事{i}" for i in range(9)))
-    assert len(steps) == 5
-    assert steps[0]["action"] == "model_step"
+def test_parse_plan_accepts_json_array_only():
+    """_parse_plan 只接受 JSON 数组：返回原始列表，结构化交给校验器。"""
+    text = '```json\n[{"action": "retrieve", "query": "贾府 人物 关系"}, {"action": "analyze", "objective": "比较立场"}]\n```'
+    raw = runtime._parse_plan(text)
+    assert isinstance(raw, list) and len(raw) == 2
+    assert raw[0]["action"] == "retrieve" and raw[0]["query"] == "贾府 人物 关系"
+
+
+def test_parse_plan_rejects_free_text():
+    """自由文本不再按行转成检索步骤：返回空列表，由校验器兜底为单 analyze。"""
+    assert runtime._parse_plan("1. 检索初见章节\n2. 计算年龄差") == []

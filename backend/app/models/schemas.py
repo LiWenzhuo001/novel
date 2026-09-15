@@ -6,7 +6,7 @@
 """
 
 from typing import List, Optional, Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ===== 用户认证 / 多租户 =====
@@ -37,13 +37,19 @@ class AuthResponse(BaseModel):
 
 
 # ===== 小说问答 =====
+# 过渡版本仍接受旧策略值（multi_expert/roleplay），进入服务后立即映射为新契约
+# 并在 meta.deprecations 中提示；下一个主版本从 Literal 中移除这两个值。
+ChatStrategy = Literal["auto", "direct", "react", "plan_execute", "multi_expert", "roleplay"]
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str
     role: Literal["student"] = "student"
     domain: Literal["novel"] = "novel"
-    strategy: Literal["auto", "direct", "multi_expert", "react", "plan_execute", "roleplay"] = "auto"
+    strategy: ChatStrategy = "auto"
+    interaction_mode: Literal["qa", "roleplay"] = "qa"
     max_steps: Optional[int] = Field(default=None, ge=2, le=12)
     memory_mode: Literal["auto", "off"] = "auto"
     history: Optional[List[dict]] = None  # [{"role": "user/assistant", "content": ""}]
@@ -51,6 +57,30 @@ class ChatRequest(BaseModel):
     file_id: Optional[str] = Field(default=None, min_length=1, max_length=32)  # 当前咨询小说
     personas: Optional[List[str]] = Field(default=None, min_length=1, max_length=3)  # 角色扮演：在场人物（1~3）
     chapter_until: Optional[int] = Field(default=None, ge=1, le=10000)  # 角色扮演：剧情截至章节；不传=全书
+    deprecations: List[str] = Field(default_factory=list, exclude=True)  # 旧值映射提示，随 meta 返回
+
+    @model_validator(mode="after")
+    def _normalize_strategy_and_mode(self) -> "ChatRequest":
+        """旧策略值映射 + 交互模式约束。映射结果通过 deprecations 透出。"""
+        if self.strategy == "multi_expert":
+            self.strategy = "plan_execute"
+            self.deprecations.append(
+                "strategy=multi_expert 已弃用，已映射为 plan_execute；下个版本将拒绝该值"
+            )
+        elif self.strategy == "roleplay":
+            self.strategy = "auto"
+            self.interaction_mode = "roleplay"
+            self.deprecations.append(
+                "strategy=roleplay 已弃用，已映射为 interaction_mode=roleplay + strategy=auto；下个版本将拒绝该值"
+            )
+        if self.interaction_mode == "qa" and self.personas:
+            raise ValueError("interaction_mode=qa 时不应传 personas；角色扮演请使用 interaction_mode=roleplay")
+        if self.interaction_mode == "roleplay" and not self.personas:
+            raise ValueError("interaction_mode=roleplay 需要 1~3 个 personas")
+        if self.chapter_until is not None and self.interaction_mode != "roleplay":
+            # 章节边界只对角色扮演和显式时间边界查询生效；普通问答传入直接忽略。
+            self.chapter_until = None
+        return self
 
 
 class WorldSelectRequest(BaseModel):

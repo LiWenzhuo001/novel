@@ -25,6 +25,24 @@ def run(coro):
     return LOOP.run_until_complete(coro)
 
 
+async def _purge_memory_jobs(user_id: str) -> None:
+    """清掉全部残留记忆任务：领取是全局 FIFO，跨用户残留会让断言错位。
+
+    用"创建时间早于未来 1 小时"的参数化条件覆盖全表，避免无 WHERE 的全表删除。
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import text as sql_text
+    from app.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            sql_text("DELETE FROM memory_jobs WHERE created_at < :cutoff").bindparams(
+                cutoff=datetime.utcnow() + timedelta(hours=1),
+            )
+        )
+        await session.commit()
+
+
 @pytest.fixture
 def no_embed(monkeypatch):
     """记忆写入不调用真实 embedding API。"""
@@ -42,38 +60,85 @@ def test_memory_tools_registered():
 
 
 def test_add_update_delete_memory_tools_roundtrip(no_embed):
-    """add → search → update → delete 全链路（真实库，随机会话）。"""
+    """写工具入队 → worker 消费 → 落库全链路（真实库，随机会话）。
+
+    回答路径零直接写库：add/update/delete 立即返回 deferred，记忆效果由
+    worker 消费 memory_jobs 后生效；search 直查可见已落库记忆。
+    """
+    from app.services import memory_worker
+    from app.db.models import ChatSession
+
     session_id = f"sess_{uuid.uuid4().hex[:8]}"
+    user_id = f"memtool_{uuid.uuid4().hex[:8]}"
+    user_token = set_current_user(user_id)
+
+    async def ensure_session():
+        # memory_jobs.session_id 有 FK：先落一行真实会话（生产路径会话必然已存在）。
+        # 顺带清掉本用户历史残留任务（FIFO 污染防护）。
+        async with memory_service.AsyncSessionLocal() as session:
+            session.add(ChatSession(id=session_id, user_id=user_id, domain="novel"))
+            await session.commit()
+        await _purge_memory_jobs(user_id)
+
+    run(ensure_session())
     token = set_memory_session(session_id, None)
     try:
         async def scenario():
+            # add：立即 ok + deferred，先不落库
             add_result = await registry.execute(
                 "add_memory", allowed_tools=MEMORY_AGENT_TOOLS,
                 content="用户喜欢简短回答", memory_type="user_preference", importance=0.9,
             )
-            assert add_result.status == "ok"
-            # search 能看到新记忆（含 id）
+            assert add_result.status == "ok" and add_result.output.get("deferred") is True
+            search_result = await registry.execute(
+                "search_memories", allowed_tools=MEMORY_AGENT_TOOLS, query="简短回答",
+            )
+            assert "没有找到相关记忆" in search_result.output["message"]
+
+            # worker 消费后记忆落库，search 可见
+            job = await memory_worker._claim_due_job()
+            assert job is not None and job.kind == "memory_op"
+            await memory_worker._run_job(job)
             search_result = await registry.execute(
                 "search_memories", allowed_tools=MEMORY_AGENT_TOOLS, query="简短回答",
             )
             assert "用户喜欢简短回答" in search_result.output["message"]
             memory_id = search_result.output["memory_ids"][0]
 
+            # update：归属校验通过后入队；未知 id 直接拒绝（同步反馈）
+            bad_update = await registry.execute(
+                "update_memory", allowed_tools=MEMORY_AGENT_TOOLS,
+                memory_id="nonexistent_id", content="x",
+            )
+            assert bad_update.status == "error" and bad_update.error_code == "memory_not_found"
             update_result = await registry.execute(
                 "update_memory", allowed_tools=MEMORY_AGENT_TOOLS,
                 memory_id=memory_id, content="用户喜欢极简回答",
             )
-            assert update_result.status == "ok"
+            assert update_result.status == "ok" and update_result.output.get("deferred") is True
+            job = await memory_worker._claim_due_job()
+            await memory_worker._run_job(job)
+            search_result = await registry.execute(
+                "search_memories", allowed_tools=MEMORY_AGENT_TOOLS, query="极简回答",
+            )
+            assert "用户喜欢极简回答" in search_result.output["message"]
 
+            # delete：入队 → worker 执行 → 记忆消失
             delete_result = await registry.execute(
                 "delete_memory", allowed_tools=MEMORY_AGENT_TOOLS, memory_id=memory_id,
             )
             assert delete_result.status == "ok"
-            return memory_id
+            job = await memory_worker._claim_due_job()
+            await memory_worker._run_job(job)
+            search_result = await registry.execute(
+                "search_memories", allowed_tools=MEMORY_AGENT_TOOLS, query="极简回答",
+            )
+            assert "没有找到相关记忆" in search_result.output["message"]
 
         run(scenario())
     finally:
         reset_memory_session(token)
+        reset_current_user(user_token)
 
 
 def test_memory_tools_reject_without_session_context():
@@ -95,8 +160,18 @@ def test_memory_tools_reject_without_session_context():
 
 
 def test_memory_agent_node_executes_model_tool_calls(monkeypatch):
-    """memory_agent 节点：模型发起 add_memory → registry 执行 → ToolMessage 回喂。"""
+    """memory_agent 节点：模型发起 add_memory → registry 入队 → ToolMessage 回喂。"""
+    from app.db.models import ChatSession
+
     session_id = f"sess_{uuid.uuid4().hex[:8]}"
+
+    async def ensure_session():
+        # memory_jobs.session_id 有 FK：先落一行真实会话。
+        async with memory_service.AsyncSessionLocal() as session:
+            session.add(ChatSession(id=session_id, user_id="memagent_test", domain="novel"))
+            await session.commit()
+
+    run(ensure_session())
     state = {
         "session_id": session_id,
         "file_id": None,
@@ -138,27 +213,19 @@ def test_memory_agent_node_executes_model_tool_calls(monkeypatch):
 
     op = run(scenario())
 
-    async def verify_db():
+    # 写操作不再直接落库：入库凭证是一条高优先级 memory_jobs 任务。
+    async def verify_job():
+        from sqlalchemy import select
+        from app.db.models import MemoryJob
         async with memory_service.AsyncSessionLocal() as session:
-            from sqlalchemy import text
-            n = (await session.execute(text(
-                "SELECT count(*) FROM agent_memories WHERE content LIKE '%简短%'"
-            ))).scalar()
-        return n
+            rows = (await session.execute(
+                select(MemoryJob).where(MemoryJob.kind == "memory_op")
+            )).scalars().all()
+        return rows
 
-    assert run(verify_db()) >= 1
-    assert op["summary"] == "已记录新的记忆"
-
-    # 清理测试记忆
-    async def cleanup():
-        async with memory_service.AsyncSessionLocal() as session:
-            from sqlalchemy import text
-            await session.execute(text(
-                "DELETE FROM agent_memories WHERE session_id=:s"
-            ), {"s": session_id[:32]})
-            await session.commit()
-
-    run(cleanup())
+    jobs = run(verify_job())
+    assert any("简短回答" in (job.payload or "") for job in jobs)
+    assert op["summary"] == "已提交记忆写入（后台生效）"
 
 
 def test_maintain_skips_extract_when_model_operated(monkeypatch):
