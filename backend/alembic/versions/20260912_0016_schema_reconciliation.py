@@ -27,6 +27,8 @@ def _trace(message: str) -> None:
     print(f"[0016] {message}", file=sys.stderr, flush=True)
 
 # (表, 索引名, 列)——ORM 元数据声明且查询/约束依赖，但历史迁移未创建。
+# 注意 ix_chat_messages_session_id_id（0013 迁移专属、不在 ORM 元数据里）也列入：
+# 服务器上若为 create_all 塑形的存量库，升级时由此补齐；本地已存在则守卫跳过。
 _MISSING_INDEXES = (
     ("agent_memories", "ix_agent_memories_preference_key", ["preference_key"]),
     ("chat_sessions", "ix_chat_sessions_user_id", ["user_id"]),
@@ -35,6 +37,7 @@ _MISSING_INDEXES = (
     ("embeddings", "ix_embeddings_chapter_no", ["chapter_no"]),
     ("embeddings", "ix_embeddings_chunk_no", ["chunk_no"]),
     ("knowledge_files", "ix_knowledge_files_user_id", ["user_id"]),
+    ("chat_messages", "ix_chat_messages_session_id_id", ["session_id", "id"]),
 )
 
 # (表, 列, 回填默认值)——先回填 NULL 再 SET NOT NULL（Expand/Contract 的 Migrate 阶段）。
