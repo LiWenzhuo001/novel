@@ -5,6 +5,7 @@
 import uuid
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, Column, Computed, DateTime, ForeignKey, Integer, String, Text, Float, text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from pgvector.sqlalchemy import Vector
@@ -219,6 +220,11 @@ class AgentMemory(Base):
     """可检索的用户/小说长期记忆；第一版仅保存稳定事实和偏好。"""
 
     __tablename__ = "agent_memories"
+    # 偏好结构化 upsert 兜底索引（check_schema 关键索引清单成员）：
+    # 显式声明使 ORM/迁移/数据库三方一致；PG 默认 NULL 相异，普通记忆行不受影响。
+    __table_args__ = (
+        sa.Index("uq_agent_memories_preference_key", "user_id", "memory_type", "preference_key", unique=True),
+    )
 
     id = Column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     user_id = Column(String(64), index=True, nullable=False)
